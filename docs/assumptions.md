@@ -11,7 +11,7 @@ Assumptions:
 - Small, medium and large cover the initial product. No arbitrary free resizing.
 - A 16-point grid aligns placement; overlap is allowed. Automatic collision resolution is future work.
 - Settings objects are small (8 KiB); the registry is bounded to 1 MiB / 128 instances / 64 active packages.
-- Package code runs in separate Bubblewrap islands with scoped state access and filtered Wayland connections. This development boundary still requires security review and desktop acceptance; resources are limited as a shared service group.
+- Package code runs in separate Bubblewrap islands with scoped state access and filtered Wayland connections. This development boundary still requires security review and desktop acceptance; each package has a separate systemd resource budget, including its runner and proxy.
 - World Clock remains a single multi-city widget. Its own API 2 layout/editor migration is separate from this Core change.
 - A version rollback changes code, not user settings. Widget authors must version their own settings migrations.
 - Complete version directories may remain after interruption or removal. Automatic garbage collection is deferred to avoid deleting code used by a running host.
