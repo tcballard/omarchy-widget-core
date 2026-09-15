@@ -92,7 +92,7 @@ Item {
         implicitWidth: Style.space(540)
         implicitHeight: Style.space(500)
         color: "transparent"
-        exclusionMode: ExclusionMode.Ignore
+        exclusionMode: ExclusionMode.Normal
         WlrLayershell.namespace: "tcballard-widget-manager"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
@@ -101,6 +101,7 @@ Item {
             entries: root.installed
             busy: operation.busy
             error: root.error
+            onConfigureRequested: function(id) { root.managerOpen=false;root.configure(id); }
             onCloseRequested: root.managerOpen = false
             onRefreshRequested: root.refresh()
             onToggleRequested: function(id, enabled) { root.execute([enabled ? "add" : "hide", id]); }
@@ -109,6 +110,8 @@ Item {
     }
     QtObject {
         id: settingsContext
+        readonly property var theme: Color
+        readonly property var metrics: Style
         property var draftSettings: ({})
         property int revision: 0
         readonly property var appearance: root.themeAppearance
@@ -118,7 +121,7 @@ Item {
         implicitWidth: Style.space(520)
         implicitHeight: Style.space(560)
         color: "transparent"
-        exclusionMode: ExclusionMode.Ignore
+        exclusionMode: ExclusionMode.Normal
         WlrLayershell.namespace: "tcballard-widget-settings"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
@@ -139,7 +142,7 @@ Item {
             visible: root.editing && root.shown
             anchors { top:true; bottom:true; left:true; right:true }
             color: "transparent"
-            exclusionMode: ExclusionMode.Ignore
+            exclusionMode: ExclusionMode.Normal
             mask: Region {}
             WlrLayershell.layer: WlrLayer.Bottom
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
@@ -170,6 +173,8 @@ Item {
             readonly property var desired: Grid.geometry(sizeName)
             property real positionX: config.x
             property real positionY: config.y
+            property bool moving: false
+            onConfigChanged: if(!moving) { positionX=config.x;positionY=config.y; }
             readonly property real scale: Style.spaceReal(1)
             screen: root.screenFor(config.monitor)
             anchors { top: true; left: true }
@@ -180,7 +185,7 @@ Item {
             implicitWidth: Math.min(desired.width * scale, screen ? screen.width : 1920)
             implicitHeight: Math.min(desired.height * scale, screen ? screen.height : 1080)
             color: "transparent"
-            exclusionMode: ExclusionMode.Ignore
+            exclusionMode: ExclusionMode.Normal
             WlrLayershell.namespace: "tcballard-widget-" + modelData
             WlrLayershell.layer: WlrLayer.Bottom
             WlrLayershell.keyboardFocus: root.editing || context.inputRequested ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
@@ -194,6 +199,8 @@ Item {
                 id: context
                 readonly property var settings: window.config.settings
                 readonly property bool active: window.visible
+                readonly property var theme: Color
+                readonly property var metrics: Style
                 readonly property int api: 2
                 readonly property string instanceId: window.modelData
                 readonly property string packageId: window.metadata.id
@@ -226,8 +233,8 @@ Item {
                 onEditRequested: root.editing = !root.editing
                 onEscapeRequested: root.editing = false
                 onHideRequested: root.execute(["hide", window.modelData])
-                onMoved: function(dx,dy) { window.positionX = Math.max(0,window.positionX+dx/window.scale); window.positionY = Math.max(0,window.positionY+dy/window.scale); }
-                onFinishedMoving: window.place(window.sizeName, window.config.monitor)
+                onMoved: function(dx,dy) { window.moving=true; window.positionX = Math.max(0,window.positionX+dx/window.scale); window.positionY = Math.max(0,window.positionY+dy/window.scale); }
+                onFinishedMoving: { window.place(window.sizeName, window.config.monitor);window.moving=false; }
                 onSizeRequested: { var sizes=window.metadata.families; window.place(sizes[(sizes.indexOf(window.sizeName)+1)%sizes.length],window.config.monitor); }
                 onMonitorRequested: { var screens=Quickshell.screens; if(screens.length) window.place(window.sizeName,screens[(screens.indexOf(window.screen)+1)%screens.length].name); }
                 Loader {
