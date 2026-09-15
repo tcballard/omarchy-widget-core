@@ -1,0 +1,4 @@
+#!/usr/bin/bash
+set -euo pipefail
+config=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+exec "$config/bin/omarchy-widget" wayland-policy "$@"
