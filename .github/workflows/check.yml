@@ -12,13 +12,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: cargo fmt --all
-      - run: cargo test
+      - run: cargo fmt --all -- --check
+      - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Resolved build inputs
-        if: always()
-        run: |
-          python3 -c 'import json,pathlib; print(json.dumps({p:pathlib.Path(p).read_text() for p in ["Cargo.lock","src/main.rs"]}))'
   qml:
     runs-on: ubuntu-latest
     steps:
