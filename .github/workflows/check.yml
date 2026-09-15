@@ -12,10 +12,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: cargo fmt --all
-      - name: Export formatted source
-        if: always()
-        run: python3 -c 'import json,pathlib; print(json.dumps({str(p):p.read_text() for p in pathlib.Path("src").glob("*.rs")}))'
+      - run: cargo fmt --all -- --check
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
   sandbox:
