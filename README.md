@@ -8,7 +8,7 @@ A shared native desktop-widget host for Omarchy: fixed widget families, a snap g
 
 ## Install or upgrade Core
 
-Requires Omarchy, Quickshell (`qs`), systemd user services, jq, Bubblewrap (`bubblewrap`), Git and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
+Requires Omarchy, Quickshell (`qs`), systemd 254+ user services with cgroup v2 CPU/memory/pids controls, jq, Bubblewrap (`bubblewrap`), Git and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support and actual resource enforcement before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
 
 ```bash
 bash install-local --update
@@ -76,7 +76,7 @@ Then remove the Core installation, launcher and service file if desired. Core's 
 
 Each package runs in a **mandatory Bubblewrap island** with read-only code, private temporary storage and no direct registry, home, network or session-bus access. A package-scoped broker mediates settings and layout changes. Its Wayland connection passes through a pinned allowlist proxy that blocks capture, clipboard and virtual-input protocols, and rejects overlay layers and exclusive keyboard capture. `omarchy-widget sandbox-check` tests namespace startup.
 
-This development boundary is not independently audited. Service resource limits remain shared; allowed surface protocols do not enforce widget geometry against malicious clients. Network widgets need a future broker/permission model. Software rendering avoids exposing GPU devices. Theme values arrive through Core's broker. See the [runtime decision](docs/runtime-and-security.md) for the exact boundary and remaining limits.
+This development boundary is not independently audited. Each package has its own 256 MiB memory ceiling, 25% CPU quota and 64-task limit, including its proxy and descendants. Core has a separate budget. Allowed surface protocols do not enforce widget geometry against malicious clients. Network widgets need a future broker/permission model. Software rendering avoids exposing GPU devices. Theme values arrive through Core's broker. See the [runtime decision](docs/runtime-and-security.md) for the exact boundary and remaining limits.
 
 Portable verification runs Rust tests, rustfmt, Clippy, Qt component checks and a production QML settings/queue → real Rust CLI → disk/reopen integration test. Wayland, restart, theme switching, fractional scaling and multiple monitors still require the [desktop checks](docs/desktop-checks.md).
 
