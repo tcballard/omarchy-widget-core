@@ -39,6 +39,10 @@ Item {
         var states=Object.assign({},saveStates); states[id]={saving:true,error:"",saved:false}; saveStates=states;
         return true;
     }
+    function closeSettings() {
+        if(configuring && editSerial) execute(["edit-done",configuring,editSerial]);
+        configuring="";
+    }
     function configure(id) {
         if(managerRole) { execute(["edit",id]); return; }
         var item=entry(id);
@@ -56,7 +60,7 @@ Item {
             if(request.token) {
                 var states=Object.assign({},root.saveStates);
                 states[request.token]={saving:false,error:message,saved:success}; root.saveStates=states;
-                if(success && root.configuring===request.token) root.configuring="";
+                if(success && root.configuring===request.token) root.closeSettings();
             }
             if(!success) return;
             if(request.args[0] === "list") {
@@ -137,7 +141,7 @@ Item {
             anchors.fill: parent
             busy: !!(root.saveStates[root.configuring] && root.saveStates[root.configuring].saving)
             error: root.saveStates[root.configuring] ? root.saveStates[root.configuring].error : ""
-            onCancelRequested: root.configuring=""
+            onCancelRequested: root.closeSettings()
             onSaveRequested: root.save(root.configuring,settingsContext.draftSettings,settingsContext.revision)
             Loader { id:settingsLoader; anchors.fill:parent; active:root.configuring!=="" }
         }
