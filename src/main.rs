@@ -402,6 +402,25 @@ impl Registry {
         }
         palette
     }
+    fn control(&self, method: &str) -> Result<Value> {
+        let _lock = self.lock()?;
+        let mut l = self.layout()?;
+        let mut runtime = l["runtime"].clone();
+        if !runtime.is_object() { runtime = json!({"shown":true,"editing":false,"managerOpen":false}); }
+        match method {
+            "manage" => runtime["managerOpen"] = json!(!runtime["managerOpen"].as_bool().unwrap_or(false)),
+            "close-manager" => runtime["managerOpen"] = json!(false),
+            "arrange" => { runtime["editing"] = json!(!runtime["editing"].as_bool().unwrap_or(false)); runtime["shown"] = json!(true); },
+            "finish-arrange" => runtime["editing"] = json!(false),
+            "show" => runtime["shown"] = json!(true),
+            "hide-all" => { runtime["shown"] = json!(false); runtime["editing"] = json!(false); },
+            "refresh" => (),
+            _ => return Err("Unknown host control".into()),
+        }
+        l["runtime"] = runtime.clone();
+        self.commit(&mut l)?;
+        Ok(json!({"runtime":runtime,"revision":l["revision"]}))
+    }
     fn snapshot(&self) -> Result<Value> {
         let l = self.layout()?;
         let mut widgets = Vec::new();
@@ -447,7 +466,7 @@ impl Registry {
             }
         }
         Ok(
-            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette()}),
+            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"]}),
         )
     }
     fn install(&self, source: &Path) -> Result<Value> {
@@ -640,13 +659,13 @@ fn run(args: &[String]) -> Result<Value> {
     let cmd = args.first().map(String::as_str).unwrap_or("help");
     if cmd == "help" {
         return Ok(
-            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
         "list" => 1,
         "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide"
-        | "remove" => 2,
+        | "remove" | "control" => 2,
         "place" | "configure" | "save" => 3,
         _ => return Err("Unknown command".into()),
     };
@@ -659,6 +678,7 @@ fn run(args: &[String]) -> Result<Value> {
     let r = Registry::from_env()?;
     match cmd {
         "list" => r.snapshot(),
+        "control" => r.control(&args[1]),
         "install" => r.install(Path::new(&args[1])),
         "update" => r.deploy(Path::new(&args[1]), true),
         "rollback" => r.rollback(&args[1]),
@@ -983,4 +1003,22 @@ mod tests {
             1
         );
     }
+    #[test]
+    fn host_control_survives_reopen_without_session_ipc() {
+        let t = Temp::new();
+        let r = Registry { data:t.0.join("data"), state:t.0.join("state") };
+        r.control("manage").unwrap();
+        assert_eq!(r.snapshot().unwrap()["runtime"]["managerOpen"], true);
+        r.control("close-manager").unwrap();
+        r.control("arrange").unwrap();
+        assert_eq!(r.snapshot().unwrap()["runtime"]["editing"], true);
+        r.control("hide-all").unwrap();
+        let state = r.snapshot().unwrap();
+        assert_eq!(state["runtime"]["shown"], false);
+        assert_eq!(state["runtime"]["editing"], false);
+        let before = r.layout().unwrap();
+        assert!(r.control("exec").is_err());
+        assert_eq!(r.layout().unwrap(), before);
+    }
+
 }
