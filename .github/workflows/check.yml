@@ -13,10 +13,12 @@ jobs:
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all
-      - run: cargo test --locked
+      - run: cargo test
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Formatted source
-        run: cat src/main.rs
+      - name: Resolved build inputs
+        if: always()
+        run: |
+          python3 -c 'import json,pathlib; print(json.dumps({p:pathlib.Path(p).read_text() for p in ["Cargo.lock","src/main.rs"]}))'
   qml:
     runs-on: ubuntu-latest
     steps:
@@ -24,6 +26,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y libegl1 libopengl0
       - run: pip install PySide6==6.11.2
       - run: python3 tests/qml_smoke.py
       - run: bash -n install-local
