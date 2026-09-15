@@ -47,7 +47,10 @@ fn read_json(path: &Path, limit: u64) -> Result<Value> {
 }
 fn manifest(dir: &Path) -> Result<Value> {
     let mut v = read_json(&dir.join("widget.json"), 16384)?;
-    if v["kind"] != "desktop-widget" || !((v["schemaVersion"] == 1 && v["coreApi"] == 1) || (v["schemaVersion"] == 2 && v["coreApi"] == 2)) {
+    if v["kind"] != "desktop-widget"
+        || !((v["schemaVersion"] == 1 && v["coreApi"] == 1)
+            || (v["schemaVersion"] == 2 && v["coreApi"] == 2))
+    {
         return Err("Requires desktop-widget schema/coreApi 1 or 2".into());
     }
     if !id_ok(v["id"].as_str().unwrap_or(""))
@@ -80,13 +83,21 @@ fn manifest(dir: &Path) -> Result<Value> {
     // API 1 remains loadable, but geometry is always owned by Core.
     let families: Vec<String> = if v["coreApi"] == 1 {
         let sizes = v["sizes"].as_object().ok_or("Missing legacy sizes")?;
-        if sizes.is_empty() || sizes.len() > 3 || !sizes.contains_key(v["defaultSize"].as_str().unwrap_or("")) {
+        if sizes.is_empty()
+            || sizes.len() > 3
+            || !sizes.contains_key(v["defaultSize"].as_str().unwrap_or(""))
+        {
             return Err("Invalid legacy sizes".into());
         }
-        sizes.keys().map(|k| family(k).map(str::to_owned)).collect::<Result<_>>()?
+        sizes
+            .keys()
+            .map(|k| family(k).map(str::to_owned))
+            .collect::<Result<_>>()?
     } else {
         let values = v["families"].as_array().ok_or("Missing families")?;
-        if values.is_empty() || values.len() > 3 { return Err("Declare 1–3 families".into()); }
+        if values.is_empty() || values.len() > 3 {
+            return Err("Declare 1–3 families".into());
+        }
         let mut result = Vec::new();
         for value in values {
             let name = value.as_str().ok_or("Invalid family")?;
@@ -95,14 +106,28 @@ fn manifest(dir: &Path) -> Result<Value> {
             }
             result.push(name.to_string());
         }
-        if !result.iter().any(|x| v["defaultFamily"] == x.as_str()) { return Err("Invalid defaultFamily".into()); }
+        if !result.iter().any(|x| v["defaultFamily"] == x.as_str()) {
+            return Err("Invalid defaultFamily".into());
+        }
         result
     };
-    let default = if v["coreApi"] == 1 { family(v["defaultSize"].as_str().unwrap_or(""))? } else { v["defaultFamily"].as_str().unwrap() }.to_string();
+    let default = if v["coreApi"] == 1 {
+        family(v["defaultSize"].as_str().unwrap_or(""))?
+    } else {
+        v["defaultFamily"].as_str().unwrap()
+    }
+    .to_string();
     v["families"] = json!(families);
     v["defaultFamily"] = json!(default);
     if let Some(editor) = v["settingsEntryPoint"].as_str() {
-        if !safe_relative(editor) || !editor.ends_with(".qml") || !dir.join(editor).canonicalize().map_err(err)?.starts_with(&canonical) {
+        if !safe_relative(editor)
+            || !editor.ends_with(".qml")
+            || !dir
+                .join(editor)
+                .canonicalize()
+                .map_err(err)?
+                .starts_with(&canonical)
+        {
             return Err("Invalid settingsEntryPoint".into());
         }
     }
@@ -158,74 +183,142 @@ fn family(name: &str) -> Result<&str> {
 fn nonce() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    format!("{}-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos(), NEXT.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "{}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
 }
 fn atomic_json(path: &Path, v: &Value) -> Result<()> {
     let parent = path.parent().ok_or("Missing parent")?;
     fs::create_dir_all(parent).map_err(err)?;
     let tmp = parent.join(format!(".write-{}", nonce()));
     let result = (|| {
-        let mut f = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp).map_err(err)?;
-        f.write_all(serde_json::to_string(v).map_err(err)?.as_bytes()).map_err(err)?;
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)
+            .map_err(err)?;
+        f.write_all(serde_json::to_string(v).map_err(err)?.as_bytes())
+            .map_err(err)?;
         f.sync_all().map_err(err)?;
         fs::rename(&tmp, path).map_err(err)?;
         File::open(parent).map_err(err)?.sync_all().map_err(err)
     })();
-    if result.is_err() { let _ = fs::remove_file(tmp); }
+    if result.is_err() {
+        let _ = fs::remove_file(tmp);
+    }
     result
 }
-struct Registry { data: PathBuf, state: PathBuf }
+struct Registry {
+    data: PathBuf,
+    state: PathBuf,
+}
 impl Registry {
     fn from_env() -> Result<Self> {
         let home = PathBuf::from(env::var_os("HOME").ok_or("HOME unavailable")?);
-        let data = env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or(home.join(".local/share"));
-        let state = env::var_os("XDG_STATE_HOME").map(PathBuf::from).unwrap_or(home.join(".local/state"));
-        if !data.is_absolute() || !state.is_absolute() { return Err("XDG roots must be absolute".into()); }
-        Ok(Self { data: data.join("omarchy/widgets"), state: state.join("omarchy/widgets") })
+        let data = env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or(home.join(".local/share"));
+        let state = env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or(home.join(".local/state"));
+        if !data.is_absolute() || !state.is_absolute() {
+            return Err("XDG roots must be absolute".into());
+        }
+        Ok(Self {
+            data: data.join("omarchy/widgets"),
+            state: state.join("omarchy/widgets"),
+        })
     }
     fn lock(&self) -> Result<File> {
         fs::create_dir_all(&self.state).map_err(err)?;
         // File locks are released by the kernel, including after SIGKILL.
         // Never unlink this inode: another process may already have it open.
-        let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).mode(0o600).open(self.state.join("registry.lock")).map_err(err)?;
-        file.try_lock().map_err(|_| "Registry busy; retry after the current operation finishes".to_string())?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .open(self.state.join("registry.lock"))
+            .map_err(err)?;
+        file.try_lock()
+            .map_err(|_| "Registry busy; retry after the current operation finishes".to_string())?;
         Ok(file)
     }
     fn package(&self, id: &str) -> Result<PathBuf> {
-        if !id_ok(id) { return Err("Invalid widget ID".into()); }
+        if !id_ok(id) {
+            return Err("Invalid widget ID".into());
+        }
         Ok(self.data.join("packages").join(id))
     }
     fn source(&self, l: &Value, id: &str) -> Result<PathBuf> {
         let legacy = self.package(id)?;
         let record = &l["packages"][id];
-        if record.is_null() { return Ok(legacy); }
-        let relative = record["current"].as_str().ok_or("Package is not installed")?;
-        if !safe_relative(relative) || !(relative.starts_with(&format!("versions/{id}/")) || relative == format!("packages/{id}")) {
+        if record.is_null() {
+            return Ok(legacy);
+        }
+        let relative = record["current"]
+            .as_str()
+            .ok_or("Package is not installed")?;
+        if !safe_relative(relative)
+            || !(relative.starts_with(&format!("versions/{id}/"))
+                || relative == format!("packages/{id}"))
+        {
             return Err("Invalid package source; state preserved".into());
         }
         Ok(self.data.join(relative))
     }
     fn layout(&self) -> Result<Value> {
         let path = self.state.join("layout.json");
-        if !path.exists() { return Ok(json!({"version":2,"revision":0,"placements":{},"packages":{}})); }
+        if !path.exists() {
+            return Ok(json!({"version":2,"revision":0,"placements":{},"packages":{}}));
+        }
         let mut v = read_json(&path, 1024 * 1024)?;
         if ![json!(1), json!(2)].contains(&v["version"]) || !v["placements"].is_object() {
             return Err("Unsupported layout; file preserved".into());
         }
         let legacy = v["version"] == 1;
-        if legacy { v["packages"] = json!({}); v["revision"] = json!(0); v["version"] = json!(2); }
-        if !v["packages"].is_object() || v["revision"].as_u64().is_none() || v["placements"].as_object().unwrap().len() > 128 {
+        if legacy {
+            v["packages"] = json!({});
+            v["revision"] = json!(0);
+            v["version"] = json!(2);
+        }
+        if !v["packages"].is_object()
+            || v["revision"].as_u64().is_none()
+            || v["placements"].as_object().unwrap().len() > 128
+        {
             return Err("Invalid registry metadata; file preserved".into());
         }
         for (id, p) in v["placements"].as_object_mut().unwrap() {
-            if !id_ok(id) || !p.is_object() || !p["enabled"].is_boolean() || !p["settings"].is_object()
-                || !["x", "y"].iter().all(|k| p[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n)))
-                || !p["monitor"].as_str().is_some_and(|s| s.len() <= 120) || !p["size"].is_string() {
+            if !id_ok(id)
+                || !p.is_object()
+                || !p["enabled"].is_boolean()
+                || !p["settings"].is_object()
+                || !["x", "y"]
+                    .iter()
+                    .all(|k| p[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n)))
+                || !p["monitor"].as_str().is_some_and(|s| s.len() <= 120)
+                || !p["size"].is_string()
+            {
                 return Err("Invalid placement; layout preserved".into());
             }
             p["size"] = json!(family(p["size"].as_str().unwrap())?);
-            if legacy { p["packageId"] = json!(id); p["definitionId"] = json!("main"); p["revision"] = json!(0); }
-            if !id_ok(p["packageId"].as_str().unwrap_or("")) || p["definitionId"] != "main" || p["revision"].as_u64().is_none() {
+            if legacy {
+                p["packageId"] = json!(id);
+                p["definitionId"] = json!("main");
+                p["revision"] = json!(0);
+            }
+            if !id_ok(p["packageId"].as_str().unwrap_or(""))
+                || p["definitionId"] != "main"
+                || p["revision"].as_u64().is_none()
+            {
                 return Err("Invalid instance identity or revision".into());
             }
         }
@@ -233,12 +326,21 @@ impl Registry {
     }
     fn commit(&self, l: &mut Value) -> Result<()> {
         let path = self.state.join("layout.json");
-        if path.exists() && read_json(&path, 1024 * 1024)?["version"] == 1 && !self.state.join("layout-v1.backup.json").exists() {
+        if path.exists()
+            && read_json(&path, 1024 * 1024)?["version"] == 1
+            && !self.state.join("layout-v1.backup.json").exists()
+        {
             let old = read_json(&path, 1024 * 1024)?;
             atomic_json(&self.state.join("layout-v1.backup.json"), &old)?;
         }
-        l["revision"] = json!(l["revision"].as_u64().ok_or("Invalid revision")?.checked_add(1).ok_or("Revision exhausted")?);
-        if serde_json::to_vec(l).map_err(err)?.len() > 1024 * 1024 { return Err("Registry exceeds 1 MiB".into()); }
+        l["revision"] = json!(l["revision"]
+            .as_u64()
+            .ok_or("Invalid revision")?
+            .checked_add(1)
+            .ok_or("Revision exhausted")?);
+        if serde_json::to_vec(l).map_err(err)?.len() > 1024 * 1024 {
+            return Err("Registry exceeds 1 MiB".into());
+        }
         atomic_json(&path, l)
     }
     fn ids(&self, l: &Value) -> Result<std::collections::BTreeSet<String>> {
@@ -248,52 +350,105 @@ impl Registry {
             for entry in fs::read_dir(legacy).map_err(err)? {
                 let entry = entry.map_err(err)?;
                 ids.insert(entry.file_name().to_string_lossy().to_string());
-                if ids.len() > MAX_PACKAGES { return Err("Package limit exceeded".into()); }
+                if ids.len() > MAX_PACKAGES {
+                    return Err("Package limit exceeded".into());
+                }
             }
         }
         ids.extend(l["packages"].as_object().unwrap().keys().cloned());
         ids.retain(|id| l["packages"][id].is_null() || !l["packages"][id]["current"].is_null());
-        if ids.len() > MAX_PACKAGES { return Err("Package limit exceeded".into()); }
+        if ids.len() > MAX_PACKAGES {
+            return Err("Package limit exceeded".into());
+        }
         Ok(ids)
+    }
+    fn palette(&self) -> Value {
+        let path = self.state.parent().unwrap().join("current/theme/colors.toml");
+        let mut palette = json!({});
+        let Ok(file) = File::open(&path) else { return palette; };
+        let mut text = String::new();
+        if file.take(16385).read_to_string(&mut text).is_err() || text.len() > 16384 { return palette; }
+        // Consume only the documented flat hex palette, not arbitrary TOML.
+        for line in text.lines() {
+            let Some((key, raw)) = line.split_once('=') else { continue; };
+            let key = key.trim();
+            if !["foreground", "background", "accent", "red"].contains(&key) { continue; }
+            let raw = raw.trim();
+            let Some(quote) = raw.chars().next().filter(|c| *c == '\"' || *c == '\'') else { continue; };
+            let Some(end) = raw[1..].find(quote) else { continue; };
+            let value = &raw[1..end+1];
+            if value.starts_with('#') && [4,7,9].contains(&value.len()) && value[1..].bytes().all(|b| b.is_ascii_hexdigit()) {
+                palette[key] = json!(value);
+            }
+        }
+        palette
     }
     fn snapshot(&self) -> Result<Value> {
         let l = self.layout()?;
         let mut widgets = Vec::new();
         let mut problems = Vec::new();
-        let theme_file = self.state.parent().unwrap().join("current/theme/widgets.json");
+        let theme_file = self
+            .state
+            .parent()
+            .unwrap()
+            .join("current/theme/widgets.json");
         let appearance = if theme_file.exists() {
             match read_json(&theme_file, 8192) {
                 Ok(v) if v.is_object() => v,
-                _ => { problems.push("Invalid theme widgets.json; using defaults".to_string()); json!({}) }
+                _ => {
+                    problems.push("Invalid theme widgets.json; using defaults".to_string());
+                    json!({})
+                }
             }
-        } else { json!({}) };
+        } else {
+            json!({})
+        };
         for id in self.ids(&l)? {
-            let validated = self.source(&l, &id).and_then(|path| validate(&path).map(|m| (path,m)));
+            let validated = self
+                .source(&l, &id)
+                .and_then(|path| validate(&path).map(|m| (path, m)));
             match validated {
                 Ok((path, m)) if m["id"] == id => {
                     let mut found = false;
                     for (instance, p) in l["placements"].as_object().unwrap() {
-                        if p["packageId"] != id { continue; }
+                        if p["packageId"] != id {
+                            continue;
+                        }
                         found = true;
                         widgets.push(json!({"instanceId":instance,"packageId":id,"definitionId":"main","manifest":m,"directory":path,"placement":p}));
                     }
-                    if !found { widgets.push(json!({"instanceId":id,"packageId":id,"definitionId":"main","manifest":m,"directory":path,"placement":null})); }
+                    if !found {
+                        widgets.push(json!({"instanceId":id,"packageId":id,"definitionId":"main","manifest":m,"directory":path,"placement":null}));
+                    }
                 }
-                _ => problems.push(format!("Invalid package: {}", id.chars().take(100).collect::<String>())),
+                _ => problems.push(format!(
+                    "Invalid package: {}",
+                    id.chars().take(100).collect::<String>()
+                )),
             }
         }
-        Ok(json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance}))
+        Ok(
+            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette()}),
+        )
     }
-    fn install(&self, source: &Path) -> Result<Value> { self.deploy(source, false) }
+    fn install(&self, source: &Path) -> Result<Value> {
+        self.deploy(source, false)
+    }
     fn deploy(&self, source: &Path, update: bool) -> Result<Value> {
         let _lock = self.lock()?;
         let m = validate(source)?;
         let id = m["id"].as_str().unwrap();
         let mut l = self.layout()?;
         let old = self.source(&l, id).ok().filter(|p| p.exists());
-        if old.is_some() && !update { return Err("Already installed; use update PATH (settings are preserved)".into()); }
-        if old.is_none() && update { return Err("Not installed; use install PATH".into()); }
-        if old.is_none() && self.ids(&l)?.len() >= MAX_PACKAGES { return Err("Package limit reached".into()); }
+        if old.is_some() && !update {
+            return Err("Already installed; use update PATH (settings are preserved)".into());
+        }
+        if old.is_none() && update {
+            return Err("Not installed; use install PATH".into());
+        }
+        if old.is_none() && self.ids(&l)?.len() >= MAX_PACKAGES {
+            return Err("Package limit reached".into());
+        }
         let relative = format!("versions/{id}/{}", nonce());
         let stage = self.data.join(&relative);
         fs::create_dir_all(&stage).map_err(err)?;
@@ -309,13 +464,27 @@ impl Registry {
             }
             validate(&stage)?;
             sync_tree(&stage)?;
-            File::open(stage.parent().unwrap()).map_err(err)?.sync_all().map_err(err)?;
-            File::open(self.data.join("versions")).map_err(err)?.sync_all().map_err(err)?;
-            File::open(&self.data).map_err(err)?.sync_all().map_err(err)?;
-            let previous = old.as_ref().and_then(|p| p.strip_prefix(&self.data).ok()).map(|p| p.to_string_lossy().to_string());
+            File::open(stage.parent().unwrap())
+                .map_err(err)?
+                .sync_all()
+                .map_err(err)?;
+            File::open(self.data.join("versions"))
+                .map_err(err)?
+                .sync_all()
+                .map_err(err)?;
+            File::open(&self.data)
+                .map_err(err)?
+                .sync_all()
+                .map_err(err)?;
+            let previous = old
+                .as_ref()
+                .and_then(|p| p.strip_prefix(&self.data).ok())
+                .map(|p| p.to_string_lossy().to_string());
             l["packages"][id] = json!({"current":relative,"previous":previous});
             self.commit(&mut l)?;
-            Ok(json!({"installed":id,"updated":update,"revision":l["revision"],"restartRequired":true}))
+            Ok(
+                json!({"installed":id,"updated":update,"revision":l["revision"],"restartRequired":true}),
+            )
         })();
         // An unreferenced version is harmless after a crash. Do not delete here:
         // a directory-fsync error can occur after the pointer commit succeeds.
@@ -326,53 +495,99 @@ impl Registry {
         self.package(id)?;
         let mut l = self.layout()?;
         let previous = l["packages"][id]["previous"].clone();
-        if !previous.is_string() { return Err("No previous package version".into()); }
+        if !previous.is_string() {
+            return Err("No previous package version".into());
+        }
         let current = l["packages"][id]["current"].clone();
         l["packages"][id]["current"] = previous;
-        if validate(&self.source(&l,id)?)?["id"] != id { return Err("Rollback identity mismatch".into()); }
+        if validate(&self.source(&l, id)?)?["id"] != id {
+            return Err("Rollback identity mismatch".into());
+        }
         l["packages"][id]["previous"] = current;
         self.commit(&mut l)?;
         Ok(json!({"rolledBack":id,"revision":l["revision"]}))
     }
     fn placement(&self, id: &str, operation: &str, value: Option<&str>) -> Result<Value> {
         let _lock = self.lock()?;
-        if !id_ok(id) { return Err("Invalid instance ID".into()); }
+        if !id_ok(id) {
+            return Err("Invalid instance ID".into());
+        }
         let mut l = self.layout()?;
-        let package_id = l["placements"][id]["packageId"].as_str().unwrap_or(id).to_owned();
+        let package_id = l["placements"][id]["packageId"]
+            .as_str()
+            .unwrap_or(id)
+            .to_owned();
         let m = manifest(&self.source(&l, &package_id)?)?;
         let instance = if operation == "duplicate" {
-            if l["placements"][id].is_null() { return Err("Add the widget before duplicating".into()); }
+            if l["placements"][id].is_null() {
+                return Err("Add the widget before duplicating".into());
+            }
             format!("instance-{}", nonce())
-        } else { id.to_string() };
-        if l["placements"][&instance].is_null() && l["placements"].as_object().unwrap().len() >= 128 { return Err("Instance limit reached".into()); }
-        if operation == "duplicate" { l["placements"][&instance] = l["placements"][id].clone(); }
+        } else {
+            id.to_string()
+        };
+        if l["placements"][&instance].is_null() && l["placements"].as_object().unwrap().len() >= 128
+        {
+            return Err("Instance limit reached".into());
+        }
+        if operation == "duplicate" {
+            l["placements"][&instance] = l["placements"][id].clone();
+        }
         let p = &mut l["placements"][&instance];
-        if p.is_null() { *p = json!({"packageId":package_id,"definitionId":"main","revision":0,"enabled":false,"x":16,"y":16,"monitor":"","size":m["defaultFamily"],"settings":m["defaults"]}); }
+        if p.is_null() {
+            *p = json!({"packageId":package_id,"definitionId":"main","revision":0,"enabled":false,"x":16,"y":16,"monitor":"","size":m["defaultFamily"],"settings":m["defaults"]});
+        }
         match operation {
             "add" | "duplicate" => p["enabled"] = json!(true),
             "hide" => p["enabled"] = json!(false),
             "configure" | "save" => {
                 let raw = value.ok_or("Missing settings")?;
-                if raw.len() > 16384 { return Err("Settings request too large".into()); }
+                if raw.len() > 16384 {
+                    return Err("Settings request too large".into());
+                }
                 let v: Value = serde_json::from_str(raw).map_err(err)?;
                 let settings = if operation == "save" {
-                    if v["revision"].as_u64() != p["revision"].as_u64() { return Err("Settings changed elsewhere. Reload before saving; your draft has been retained.".into()); }
+                    if v["revision"].as_u64() != p["revision"].as_u64() {
+                        return Err("Settings changed elsewhere. Reload before saving; your draft has been retained.".into());
+                    }
                     v["settings"].clone()
-                } else { v };
-                if !settings.is_object() || serde_json::to_vec(&settings).map_err(err)?.len() > 8192 { return Err("Settings must be an object up to 8 KiB".into()); }
+                } else {
+                    v
+                };
+                if !settings.is_object() || serde_json::to_vec(&settings).map_err(err)?.len() > 8192
+                {
+                    return Err("Settings must be an object up to 8 KiB".into());
+                }
                 p["settings"] = settings;
-                p["revision"] = json!(p["revision"].as_u64().unwrap().checked_add(1).ok_or("Revision exhausted")?);
+                p["revision"] = json!(p["revision"]
+                    .as_u64()
+                    .unwrap()
+                    .checked_add(1)
+                    .ok_or("Revision exhausted")?);
             }
             "place" => {
                 let raw = value.ok_or("Missing placement")?;
-                if raw.len() > 1024 { return Err("Placement too large".into()); }
+                if raw.len() > 1024 {
+                    return Err("Placement too large".into());
+                }
                 let v: Value = serde_json::from_str(raw).map_err(err)?;
-                if !["x","y"].iter().all(|k| v[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n))) || !v["monitor"].as_str().is_some_and(|s| s.len() <= 120) { return Err("Invalid placement".into()); }
+                if !["x", "y"]
+                    .iter()
+                    .all(|k| v[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n)))
+                    || !v["monitor"].as_str().is_some_and(|s| s.len() <= 120)
+                {
+                    return Err("Invalid placement".into());
+                }
                 let size = family(v["size"].as_str().unwrap_or(""))?;
-                if !m["families"].as_array().unwrap().contains(&json!(size)) { return Err("Unsupported widget family".into()); }
+                if !m["families"].as_array().unwrap().contains(&json!(size)) {
+                    return Err("Unsupported widget family".into());
+                }
                 // UI snaps in screen coordinates; CLI enforces the same 16px grid.
-                for k in ["x","y"] { p[k] = json!((v[k].as_f64().unwrap() / 16.0).round() * 16.0); }
-                p["monitor"] = v["monitor"].clone(); p["size"] = json!(size);
+                for k in ["x", "y"] {
+                    p[k] = json!((v[k].as_f64().unwrap() / 16.0).round() * 16.0);
+                }
+                p["monitor"] = v["monitor"].clone();
+                p["size"] = json!(size);
             }
             _ => return Err("Unknown operation".into()),
         }
@@ -383,9 +598,12 @@ impl Registry {
     fn remove(&self, id: &str) -> Result<Value> {
         let _lock = self.lock()?;
         let mut l = self.layout()?;
-        validate(&self.source(&l,id)?)?;
+        validate(&self.source(&l, id)?)?;
         l["packages"][id] = json!({"current":null,"previous":null});
-        l["placements"].as_object_mut().unwrap().retain(|_,p| p["packageId"] != id);
+        l["placements"]
+            .as_object_mut()
+            .unwrap()
+            .retain(|_, p| p["packageId"] != id);
         self.commit(&mut l)?;
         Ok(json!({"removed":id,"revision":l["revision"]}))
     }
@@ -393,21 +611,32 @@ impl Registry {
 fn sync_tree(dir: &Path) -> Result<()> {
     for entry in fs::read_dir(dir).map_err(err)? {
         let entry = entry.map_err(err)?;
-        if entry.file_type().map_err(err)?.is_dir() { sync_tree(&entry.path())?; }
+        if entry.file_type().map_err(err)?.is_dir() {
+            sync_tree(&entry.path())?;
+        }
     }
     File::open(dir).map_err(err)?.sync_all().map_err(err)
 }
 fn run(args: &[String]) -> Result<Value> {
     let cmd = args.first().map(String::as_str).unwrap_or("help");
-    if cmd == "help" { return Ok(json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","remove PACKAGE_ID"],"api":2,"version":"0.0.2"})); }
+    if cmd == "help" {
+        return Ok(
+            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
+        );
+    }
     let required = match cmd {
         "list" => 1,
-        "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide" | "remove" => 2,
+        "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide"
+        | "remove" => 2,
         "place" | "configure" | "save" => 3,
         _ => return Err("Unknown command".into()),
     };
-    if args.len() != required { return Err("Wrong argument count; use help".into()); }
-    if cmd == "validate" { return validate(Path::new(&args[1])); }
+    if args.len() != required {
+        return Err("Wrong argument count; use help".into());
+    }
+    if cmd == "validate" {
+        return validate(Path::new(&args[1]));
+    }
     let r = Registry::from_env()?;
     match cmd {
         "list" => r.snapshot(),
@@ -539,7 +768,10 @@ mod tests {
         assert!(r
             .placement("io.example.test", "place", Some("{\"x\":-1}"))
             .is_err());
-        assert!(r.layout().unwrap()["placements"].as_object().unwrap().is_empty());
+        assert!(r.layout().unwrap()["placements"]
+            .as_object()
+            .unwrap()
+            .is_empty());
     }
     #[test]
     fn future_layout_preserved() {
@@ -588,65 +820,148 @@ mod tests {
     }
     #[test]
     fn saves_are_acknowledged_and_stale_editors_cannot_overwrite() {
-        let t=Temp::new(); let src=t.0.join("source"); fixture(&src);
-        let r=Registry{data:t.0.join("data"),state:t.0.join("state")};
-        r.install(&src).unwrap(); r.placement("io.example.test","add",None).unwrap();
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
         let ack=r.placement("io.example.test","save",Some(r#"{"revision":0,"settings":{"cities":[{"label":"Paris","zone":"Europe/Paris"}]}}"#)).unwrap();
-        assert_eq!(ack["placement"]["revision"],1);
-        assert!(r.placement("io.example.test","save",Some(r#"{"revision":0,"settings":{}}"#)).is_err());
-        let reopened=Registry{data:r.data.clone(),state:r.state.clone()};
-        assert_eq!(reopened.snapshot().unwrap()["installed"][0]["placement"]["settings"]["cities"][0]["label"],"Paris");
+        assert_eq!(ack["placement"]["revision"], 1);
+        assert!(r
+            .placement(
+                "io.example.test",
+                "save",
+                Some(r#"{"revision":0,"settings":{}}"#)
+            )
+            .is_err());
+        let reopened = Registry {
+            data: r.data.clone(),
+            state: r.state.clone(),
+        };
+        assert_eq!(
+            reopened.snapshot().unwrap()["installed"][0]["placement"]["settings"]["cities"][0]
+                ["label"],
+            "Paris"
+        );
     }
     #[test]
     fn update_rollback_and_lower_version_preserve_instances() {
-        let t=Temp::new(); let src=t.0.join("source"); fixture(&src);
-        let r=Registry{data:t.0.join("data"),state:t.0.join("state")};
-        r.install(&src).unwrap(); r.placement("io.example.test","add",None).unwrap();
-        let second=r.placement("io.example.test","duplicate",None).unwrap()["updated"].as_str().unwrap().to_string();
-        r.placement(&second,"configure",Some(r#"{"city":"Tokyo"}"#)).unwrap();
-        let mut m=read_json(&src.join("widget.json"),16384).unwrap(); m["version"]=json!("0.0.2");
-        fs::write(src.join("widget.json"),m.to_string()).unwrap();
-        r.deploy(&src,true).unwrap();
-        assert_eq!(r.snapshot().unwrap()["installed"][0]["manifest"]["version"],"0.0.2");
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        let second = r.placement("io.example.test", "duplicate", None).unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        r.placement(&second, "configure", Some(r#"{"city":"Tokyo"}"#))
+            .unwrap();
+        let mut m = read_json(&src.join("widget.json"), 16384).unwrap();
+        m["version"] = json!("0.0.2");
+        fs::write(src.join("widget.json"), m.to_string()).unwrap();
+        r.deploy(&src, true).unwrap();
+        assert_eq!(
+            r.snapshot().unwrap()["installed"][0]["manifest"]["version"],
+            "0.0.2"
+        );
         r.rollback("io.example.test").unwrap();
-        let snap=r.snapshot().unwrap();
-        assert_eq!(snap["installed"][0]["manifest"]["version"],"0.1.0");
-        assert_eq!(snap["installed"].as_array().unwrap().len(),2);
-        assert_eq!(r.layout().unwrap()["placements"][&second]["settings"]["city"],"Tokyo");
+        let snap = r.snapshot().unwrap();
+        assert_eq!(snap["installed"][0]["manifest"]["version"], "0.1.0");
+        assert_eq!(snap["installed"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            r.layout().unwrap()["placements"][&second]["settings"]["city"],
+            "Tokyo"
+        );
     }
     #[test]
     fn legacy_migration_preserves_settings_and_original_backup() {
-        let t=Temp::new(); let r=Registry{data:t.0.join("data"),state:t.0.join("state")};
-        fixture(&r.package("io.example.test").unwrap()); fs::create_dir_all(&r.state).unwrap();
-        let old=json!({"version":1,"placements":{"io.example.test":{"enabled":true,"x":40,"y":80,"monitor":"DP-1","size":"standard","settings":{"cities":["London"],"appearance":{"radius":18}}}}});
-        fs::write(r.state.join("layout.json"),old.to_string()).unwrap();
-        assert_eq!(r.snapshot().unwrap()["installed"][0]["placement"]["size"],"medium");
-        r.placement("io.example.test","hide",None).unwrap();
-        assert_eq!(read_json(&r.state.join("layout-v1.backup.json"),65536).unwrap(),old);
-        let migrated=r.layout().unwrap();
-        assert_eq!(migrated["version"],2);
-        assert_eq!(migrated["placements"]["io.example.test"]["settings"],old["placements"]["io.example.test"]["settings"]);
+        let t = Temp::new();
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        fixture(&r.package("io.example.test").unwrap());
+        fs::create_dir_all(&r.state).unwrap();
+        let old = json!({"version":1,"placements":{"io.example.test":{"enabled":true,"x":40,"y":80,"monitor":"DP-1","size":"standard","settings":{"cities":["London"],"appearance":{"radius":18}}}}});
+        fs::write(r.state.join("layout.json"), old.to_string()).unwrap();
+        assert_eq!(
+            r.snapshot().unwrap()["installed"][0]["placement"]["size"],
+            "medium"
+        );
+        r.placement("io.example.test", "hide", None).unwrap();
+        assert_eq!(
+            read_json(&r.state.join("layout-v1.backup.json"), 65536).unwrap(),
+            old
+        );
+        let migrated = r.layout().unwrap();
+        assert_eq!(migrated["version"], 2);
+        assert_eq!(
+            migrated["placements"]["io.example.test"]["settings"],
+            old["placements"]["io.example.test"]["settings"]
+        );
     }
     #[test]
     fn api_two_families_and_grid_are_enforced() {
-        let t=Temp::new(); let src=t.0.join("source"); fixture(&src);
-        let mut m=read_json(&src.join("widget.json"),16384).unwrap();
-        m["schemaVersion"]=json!(2);m["coreApi"]=json!(2);m["families"]=json!(["medium","large"]);m["defaultFamily"]=json!("large");
-        fs::write(src.join("widget.json"),m.to_string()).unwrap();
-        let r=Registry{data:t.0.join("data"),state:t.0.join("state")};r.install(&src).unwrap();
-        let ack=r.placement("io.example.test","place",Some(r#"{"x":39,"y":73,"monitor":"DP-1","size":"medium"}"#)).unwrap();
-        assert_eq!(ack["placement"]["x"],32.0);assert_eq!(ack["placement"]["y"],80.0);
-        assert!(r.placement("io.example.test","place",Some(r#"{"x":0,"y":0,"monitor":"","size":"small"}"#)).is_err());
-        m["families"]=json!(["medium","medium"]);fs::write(src.join("widget.json"),m.to_string()).unwrap();
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let mut m = read_json(&src.join("widget.json"), 16384).unwrap();
+        m["schemaVersion"] = json!(2);
+        m["coreApi"] = json!(2);
+        m["families"] = json!(["medium", "large"]);
+        m["defaultFamily"] = json!("large");
+        fs::write(src.join("widget.json"), m.to_string()).unwrap();
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        let ack = r
+            .placement(
+                "io.example.test",
+                "place",
+                Some(r#"{"x":39,"y":73,"monitor":"DP-1","size":"medium"}"#),
+            )
+            .unwrap();
+        assert_eq!(ack["placement"]["x"], 32.0);
+        assert_eq!(ack["placement"]["y"], 80.0);
+        assert!(r
+            .placement(
+                "io.example.test",
+                "place",
+                Some(r#"{"x":0,"y":0,"monitor":"","size":"small"}"#)
+            )
+            .is_err());
+        m["families"] = json!(["medium", "medium"]);
+        fs::write(src.join("widget.json"), m.to_string()).unwrap();
         assert!(validate(&src).is_err());
     }
     #[test]
     fn invalid_update_leaves_current_package_and_state_intact() {
-        let t=Temp::new();let src=t.0.join("source");fixture(&src);
-        let r=Registry{data:t.0.join("data"),state:t.0.join("state")};r.install(&src).unwrap();
-        let before=r.layout().unwrap();fs::write(src.join("widget.json"),"bad json").unwrap();
-        assert!(r.deploy(&src,true).is_err());assert_eq!(r.layout().unwrap(),before);
-        assert_eq!(r.snapshot().unwrap()["installed"].as_array().unwrap().len(),1);
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        let before = r.layout().unwrap();
+        fs::write(src.join("widget.json"), "bad json").unwrap();
+        assert!(r.deploy(&src, true).is_err());
+        assert_eq!(r.layout().unwrap(), before);
+        assert_eq!(
+            r.snapshot().unwrap()["installed"].as_array().unwrap().len(),
+            1
+        );
     }
-
 }
