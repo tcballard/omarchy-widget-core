@@ -11,7 +11,7 @@ if name=='cargo':
     manifest=pathlib.Path(args[args.index('--manifest-path')+1])
     helper=manifest.parent/'target/release/omarchy-widget'
     helper.parent.mkdir(parents=True,exist_ok=True)
-    helper.write_text("#!/usr/bin/env python3\nprint('{}')\n")
+    helper.write_text("#!/usr/bin/env python3\nimport os,sys\nif len(sys.argv)>1 and sys.argv[1]=='resource-preflight' and os.getenv('FAIL_RESOURCE'):sys.exit(1)\nprint('{}')\n")
     helper.chmod(0o755)
 elif name=='omarchy':
     if args[:2]==['plugin','list']:print(json.dumps([{'id':'io.github.tcballard.widget-core'}]))
@@ -19,7 +19,7 @@ elif name=='omarchy':
 elif name=='systemctl':
     if 'start' in args and os.getenv('FAIL_START'):sys.exit(1)
 '''
-for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX']:
+for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE']:
     with tempfile.TemporaryDirectory(prefix='widget install ') as tmp:
         base=Path(tmp); home=base/'home with spaces';home.mkdir()
         repo=base/'source with spaces';shutil.copytree(root,repo,ignore=shutil.ignore_patterns('target','test-results'))
