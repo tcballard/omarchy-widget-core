@@ -35,6 +35,7 @@ with tempfile.TemporaryDirectory(prefix='widget-island-') as temp:
     absent=config/'absent';absent.write_text(source.replace('/usr/bin/bwrap',str(base/'missing')))
     assert subprocess.run(['bash',str(absent),'check'],env=env,capture_output=True).returncode
     if '--live' not in sys.argv:sys.exit(0)
+    tcp=socket.socket();tcp.bind(('127.0.0.1',0));tcp.listen()
     probe=config/'qml/probe.py'
     probe.write_text('''import os,pathlib,socket
 assert 'SSH_AUTH_SOCK' not in os.environ and 'SANDBOX_SECRET' not in os.environ
@@ -45,8 +46,12 @@ except OSError:pass
 else:raise AssertionError('Writable package')
 assert not pathlib.Path('/proc/'''+str(os.getpid())+'''/environ').exists()
 assert pathlib.Path('/run/widget-core/broker').is_socket()
+network=socket.socket();network.settimeout(1)
+try:network.connect(('127.0.0.1','''+str(tcp.getsockname()[1])+'''))
+except OSError:pass
+else:raise AssertionError('Host network reachable')
 pathlib.Path('/tmp/scratch').write_text('ephemeral')
-print('PASS: actual package sandbox denies host files, raw display, other sockets, code writes and host processes')
+print('PASS: actual package sandbox denies host files, raw display, other sockets, code writes, host processes and host networking')
 ''')
     plan.write_text(source.replace('/usr/bin/qs --no-duplicate -p /app','/usr/bin/python3 /app/qml/probe.py'))
     subprocess.run(command,env=env,check=True,timeout=20)
