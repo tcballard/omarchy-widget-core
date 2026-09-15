@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
         path.write_text(text)
     preview = temp / "Preview.qml"
     preview.write_text('''import QtQuick
+import qs.Commons
 import "''' + (root / "qml").as_uri() + '''" as Core
 Window {
     width: 540; height: 500; visible: true
@@ -35,6 +36,14 @@ Window {
     function populate() {
         manager.entries = [{manifest:{id:"io.example.fixture",name:"Contract fixture",version:"0.1.0"},placement:null}]
     }
+    Core.WidgetFrame {
+        id:frame; objectName:"frame"; anchors.fill:parent; anchors.margins:20; visible:false
+        appearance:({radius:16,borderAlpha:0.08,fontFamily:"DejaVu Sans"})
+        title:"Fixture"; onEditRequested:editing=!editing
+        Core.Label { anchors.centerIn:parent;text:"Theme-aware widget frame" }
+    }
+    function lightFrame() { manager.visible=false; frame.visible=true; Color.light=true; }
+    function darkFrame() { Color.light=false; frame.editing=true; }
 }
 ''')
     app = QGuiApplication([])
@@ -57,8 +66,19 @@ Window {
             out = root / "test-results" / "manager.png"
             out.parent.mkdir(exist_ok=True)
             assert window.grabWindow().save(str(out))
+            QMetaObject.invokeMethod(window,"lightFrame")
+            app.processEvents()
+            surface=window.findChild(QObject,"widget-surface")
+            assert surface.property("radius")==16
+            edit=window.findChild(QObject,"edit-button")
+            assert not edit.property("visible"), "Idle title/control must be hidden"
+            assert window.grabWindow().save(str(out.parent/"frame-light.png"))
+            QMetaObject.invokeMethod(window,"darkFrame")
+            app.processEvents()
+            assert edit.property("visible"), "Arrange controls must remain available"
+            assert window.grabWindow().save(str(out.parent/"frame-dark-edit.png"))
             assert not warnings, "\n".join(warnings)
-            print("PASS: all QML parses; manager renders empty and populated, Escape closes")
+            print("PASS: QML parses; manager lifecycle; soft light frame; dark arrangement controls")
             app.exit(0)
         except Exception:
             import traceback
