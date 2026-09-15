@@ -39,8 +39,8 @@ The Rust helper prints one JSON response and exits nonzero on failure. `list` re
 
 Core serializes UI writes, coalesces queued placement requests for the same instance and deduplicates queued refreshes. A full queue rejects explicitly. External simultaneous writes are refused with a retryable busy error. A timeout is reported as uncertain because the commit may already have reached disk.
 
-`install PATH` installs without activating. `update PATH` requires an existing package. Both validate and copy into a new complete version directory; only then does the registry pointer change. `rollback PACKAGE_ID` switches to the previous valid version. These operations accept the deliberate 0.1.x → 0.0.2 reset. The CLI wrapper asks the host to refresh after mutations.
+`install PATH` installs without activating. `update PATH` requires an existing package. Both validate and copy into a new complete version directory; only then does the registry pointer change. `rollback PACKAGE_ID` switches to the previous valid version. These operations accept the deliberate 0.1.x → 0.0.2 reset. The host observes registry changes within about one second. External controls use `control METHOD` through the same locked atomic registry; no session IPC directory is shared with the sandbox.
 
 ## Runtime boundary
 
-Widget QML runs in the shared standalone host. It must not depend on the Omarchy shell's internal objects, services or main QML engine. The shell compatibility service forwards commands only. One widget can still crash or block the shared widget process; process separation is not a per-widget security boundary.
+Widget QML runs in the shared standalone host. It must not depend on the Omarchy shell's internal objects, services or main QML engine. The shell compatibility service forwards commands only. The shared host now runs inside Bubblewrap with the policy documented in runtime-and-security.md. One widget can still crash or block it, or modify shared Core state. The allowed Wayland socket is unfiltered; package code remains trusted. Network access is denied for all widgets.
