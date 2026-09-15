@@ -222,12 +222,21 @@ fn launch(
     fs::write(&policy_path, policy).map_err(err)?;
     static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let unit = format!("omarchy-widget-island-{}-{}-{sequence}.service", std::process::id(), directory.file_name().unwrap().to_string_lossy());
+    let unit = format!(
+        "omarchy-widget-island-{}-{}-{sequence}.service",
+        std::process::id(),
+        directory.file_name().unwrap().to_string_lossy()
+    );
     let child = Command::new("/usr/bin/systemd-run")
         .args(resources::service_args(&unit)?)
-        .arg(config.join("bin/omarchy-widget")).arg("island-worker")
-        .arg(config).arg(source).arg(&directory)
-        .stdin(Stdio::null()).spawn().map_err(err)?;
+        .arg(config.join("bin/omarchy-widget"))
+        .arg("island-worker")
+        .arg(config)
+        .arg(source)
+        .arg(&directory)
+        .stdin(Stdio::null())
+        .spawn()
+        .map_err(err)?;
     Ok(Runner {
         source: source.into(),
         directory,
@@ -312,8 +321,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
             }
             let mut dead = Vec::new();
             for (id, runner) in &mut runners {
-                if runner.child.try_wait().map_err(err)?.is_some()
-                {
+                if runner.child.try_wait().map_err(err)?.is_some() {
                     dead.push(id.clone());
                     continue;
                 }
