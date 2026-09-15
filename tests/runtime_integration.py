@@ -8,6 +8,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtCore import QObject, Property, Signal, QProcess, QUrl, QPoint, QMetaObject, Qt
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 from PySide6.QtGui import QGuiApplication
+from PySide6.QtQuick import QQuickItem, QQuickWindow
 from PySide6.QtTest import QTest
 root = Path(__file__).resolve().parents[1]
 binary = Path(sys.argv[1]).resolve()
@@ -119,7 +120,7 @@ Window {
     QMetaObject.invokeMethod(window,'initialize',Q_ARG('QVariant',json.dumps(snapshot)))
     assert QMetaObject.invokeMethod(window,'gridCheck',Q_RETURN_ARG('QVariant'))
     QMetaObject.invokeMethod(window,'backlog')
-    button=window.findChild(QObject,'save-button')
+    button=window.findChild(QQuickItem,'save-button')
     assert button
     app.processEvents()
     position=button.mapToScene(QPoint(int(button.width()/2),int(button.height()/2)))
