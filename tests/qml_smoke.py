@@ -44,6 +44,13 @@ Window {
     }
     function lightFrame() { manager.visible=false; frame.visible=true; Color.light=true; }
     function darkFrame() { Color.light=false; frame.editing=true; }
+    function examples() {
+        var editor=Qt.createComponent("''' + (root / 'examples/notes/Settings.qml').as_uri() + '''");
+        if(editor.status!==Component.Ready) throw new Error(editor.errorString());
+        var item=editor.createObject(frame,{settingsContext:{theme:Color,metrics:Style,draftSettings:{note:"Fixture"}}});
+        if(!item) throw new Error(editor.errorString());
+        item.destroy();
+    }
 }
 ''')
     app = QGuiApplication([])
@@ -77,6 +84,8 @@ Window {
             app.processEvents()
             assert edit.property("visible"), "Arrange controls must remain available"
             assert window.grabWindow().save(str(out.parent/"frame-dark-edit.png"))
+            QMetaObject.invokeMethod(window,"examples")
+            app.processEvents()
             assert not warnings, "\n".join(warnings)
             print("PASS: QML parses; manager lifecycle; soft light frame; dark arrangement controls")
             app.exit(0)
