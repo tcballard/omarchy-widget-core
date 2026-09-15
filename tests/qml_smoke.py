@@ -79,7 +79,9 @@ Window {
             assert surface.property("radius")==16
             edit=window.findChild(QObject,"edit-button")
             assert not edit.property("visible"), "Idle title/control must be hidden"
-            assert window.grabWindow().save(str(out.parent/"frame-light.png"))
+            capture=window.grabWindow()
+            assert capture.save(str(out.parent/"frame-light.png"))
+            assert capture.pixelColor(40,40)!=capture.pixelColor(0,0), "Widget frame rendered blank"
             QMetaObject.invokeMethod(window,"darkFrame")
             app.processEvents()
             assert edit.property("visible"), "Arrange controls must remain available"
