@@ -88,6 +88,7 @@ with tempfile.TemporaryDirectory() as directory:
 '''
     preview=temp/'Integration.qml'
     preview.write_text('''import QtQuick
+import qs.Commons
 import "'''+(root/'qml').as_uri()+'''" as Core
 import "'''+(root/'qml/Grid.js').as_uri()+'''" as Grid
 Window {
