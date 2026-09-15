@@ -678,6 +678,9 @@ fn run(args: &[String]) -> Result<Value> {
     if cmd == "resource-plan" && args.len() == 2 {
         return Ok(json!(resources::service_args(&args[1])?));
     }
+    if cmd == "resource-preflight" && args.len() == 1 {
+        return resources::preflight();
+    }
     if cmd == "resource-check" && args.len() == 1 {
         return resources::verify();
     }
