@@ -1,0 +1,30 @@
+#!/usr/bin/bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+core_id=io.github.tcballard.widget-core
+destination="$HOME/.config/omarchy/plugins/$core_id"
+for command_name in cargo omarchy omarchy-shell jq; do
+  command -v "$command_name" >/dev/null || { echo "Missing command: $command_name" >&2; exit 1; }
+done
+[[ ! -e "$destination" && ! -L "$destination" ]] || { echo "Core already installed at $destination. See README for replacement instructions." >&2; exit 1; }
+cargo build --manifest-path "$root/Cargo.toml" --locked --release
+omarchy plugin validate "$root"
+mkdir -p -- "$(dirname -- "$destination")"
+stage=$(mktemp -d "$(dirname -- "$destination")/.widget-core.XXXXXXXX")
+trap 'rm -rf -- "$stage"' EXIT
+cp -- "$root/manifest.json" "$root/Service.qml" "$root/LICENSE" "$stage/"
+cp -R -- "$root/qml" "$stage/"
+mkdir "$stage/bin"
+install -m755 "$root/target/release/omarchy-widget" "$stage/bin/omarchy-widget"
+mv -T -- "$stage" "$destination"
+omarchy-shell shell rescanPlugins
+for ((attempt=0;attempt<40;attempt++)); do
+  if omarchy plugin list --json | jq -e --arg id "$core_id" 'any(.[]; .id==$id)' >/dev/null; then
+    omarchy plugin enable "$core_id"
+    echo "Core installed. Open manager: omarchy-shell $core_id manage"
+    exit 0
+  fi
+  sleep 0.1
+done
+echo "Core copied, but discovery was not confirmed. Inspect Omarchy shell logs." >&2
+exit 1
