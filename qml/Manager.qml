@@ -34,7 +34,7 @@ FocusScope {
                     Label { text: modelData.manifest.name; font.bold: true; Layout.fillWidth: true }
                     Label { text: modelData.manifest.version + " · " + modelData.manifest.id; color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.fillWidth: true }
                 }
-                Ui.Button { text: modelData.placement && modelData.placement.enabled ? "Hide" : "Add"; enabled: !root.busy; focusable: true; onClicked: root.toggleRequested(modelData.manifest.id, !(modelData.placement && modelData.placement.enabled)) }
+                Ui.Button { text: modelData.placement && modelData.placement.enabled ? "Hide" : "Add"; enabled: !root.busy; focusable: true; onClicked: root.toggleRequested(modelData.instanceId || modelData.manifest.id, !(modelData.placement && modelData.placement.enabled)) }
             }
             Label { anchors.centerIn: parent; visible: !root.entries.length; text: "No widgets installed yet.\nInstall a widget package to get started."; horizontalAlignment: Text.AlignHCenter }
         }
