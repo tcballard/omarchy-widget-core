@@ -1,20 +1,21 @@
-# Architecture assumptions
+# Core v0.0.2 review and assumptions
 
-1. Widgets are their own product/package category. Each widget has its own repository, version and `widget.json`. Core owns the common runtime. No individual widgets ship here.
-2. Start with actual native desktop surfaces. QML content runs within Quattro's existing Quickshell process. Core uses the current service loader as a replaceable bootstrap adapter; this does not establish official upstream support.
-3. The host and storefront have different jobs. This repo implements hosting plus a manager of already-installed packages. A future catalogue supplies discovery and verified distribution metadata; the host remains usable without it.
-4. Install and add are distinct actions. Copying a local package does not execute QML. Adding explicitly loads trusted code. There is no sandbox in this version.
-5. Core owns surfaces, theme scaling, placement, monitor fallback, lifecycle and saved settings. Widgets own domain content, data sources, settings semantics and error/empty states. Provider credentials are not part of Core's settings design.
-6. One package gets one desktop placement initially. World Clock is one widget showing multiple city/timezone rows, inspired by Bloomberg Launchpad. Its eventual repo should handle timezone/DST logic internally.
-7. Local package snapshots are enough to prove the contract. Automatic remote installation, upgrades, signed artifacts, marketplace submissions and a skills bundle come after the first real widgets expose the gaps.
-8. User-level XDG directories hold the widget registry. Core removal does not imply deleting widget packages. A single writer lock and atomic JSON replacement protect ordinary settings writes. Package removal and layout update are separate filesystem operations; power-loss recovery across both is not transactional.
-9. Core API 1 is provisional. Keep the boundary small, document changes and use real desktop checks before declaring compatibility. Current targets are Quattro's service facade, theme tokens and Wayland layer-shell APIs.
+The previous experimental architecture allowed arbitrary package dimensions, discarded commands while the helper was busy, recreated widget windows after snapshots, had no per-editor save acknowledgement, used crash-stale directory locks, and delegated replacement to individual package installers.
 
-## What this proves next
+v0.0.2 addresses these with fixed families, logical snap coordinates, stable instance identities, serialized/coalesced operations, revisioned durable settings, kernel writer locks, and immutable package versions switched through an atomic registry document. It also moves widget execution into a separate supervised Quickshell process.
 
-Install Core on the target Omarchy machine, verify its empty manager, then build a separate World Clock against the package contract. Exercise multiple timezone rows, sizes, restart persistence and monitor switching. A Sports widget can then test asynchronous producers and stale-data behavior without embedding a sports provider in Core.
+Assumptions:
 
-## Sources for the integration shape
+- Widgets remain separate packages/repositories; Core is the shared runtime and manager.
+- One definition per package is sufficient now; the explicit definition ID is `main`.
+- Small, medium and large cover the initial product. No arbitrary free resizing.
+- A 16-point grid aligns placement; overlap is allowed. Automatic collision resolution is future work.
+- Settings objects are small (8 KiB); the registry is bounded to 1 MiB / 128 instances / 64 active packages.
+- Package code is trusted. The standalone process is not a sandbox.
+- World Clock remains a single multi-city widget. Its own API 2 layout/editor migration is separate from this Core change.
+- A version rollback changes code, not user settings. Widget authors must version their own settings migrations.
+- Complete version directories may remain after interruption or removal. Automatic garbage collection is deferred to avoid deleting code used by a running host.
+- Display positions use monitor names and a fallback screen. Live compositor behaviour, work-area boundaries and fractional scaling must pass desktop acceptance.
+- Core consumes active theme files and uses its own components; no official new Omarchy theme API is claimed.
 
-- [Omarchy Quattro shell](https://github.com/omacom/omarchy/tree/quattro/shell): service injection, semantic theme tokens and existing shell runtime. The inspected tree was `f2b419d9a9d7e7821de2ddf9c42991e32cf06cdf`; this identifies a tree, not a compatibility release.
-- [Initial desktop-widget reference](https://github.com/cyelis1224/omarchy-desktop-widgets): the desktop-widget idea shared at the start of this exploration. This repo is a separate experiment.
+The initial 0.1.x tags do not imply stability. This development line is 0.0.2. Before 0.1.0, require successful desktop acceptance, a World Clock migration exercising the contract, reliable upgrade/recovery evidence, and an explicit decision about whether supported packages remain trusted or require sandbox enforcement.
