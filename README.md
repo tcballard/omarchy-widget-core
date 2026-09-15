@@ -1,105 +1,81 @@
 # Omarchy Widget Core
 
-A shared native host for desktop widgets on Omarchy. Core provides the desktop surfaces, an installed-widget manager, placement controls and persistent settings. Each widget lives in its own repository and declares a separate `widget.json` contract.
+<img src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-app.svg" alt="Omarchy App" height="20">
 
-**Experimental foundation — 0.1.1.** No individual widgets are bundled. This is a working starting point for trying the architecture on a real desktop, not an official Omarchy subsystem or marketplace.
+A shared native desktop-widget host for Omarchy: fixed widget families, a snap grid, settings, and package management. Each widget lives in its own repository. Core runs their QML in a **separate Quickshell process**, supervised by a user service. An optional compatibility plugin forwards old shell commands; it loads no widget code.
 
-0.1.1 adds quieter rounded frames, [theme-owned widget appearance](docs/widget-appearance.md)
-and opt-in keyboard focus for widget editors. Upgrade from your Core checkout:
-`git pull --ff-only`, then `bash install-local --update`. The installer retains
-the previous Core snapshot and leaves widget packages, cities and layout intact.
-Open the manager to arrange widgets; the idle frame no longer shows a title bar.
+**v0.0.2 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. No installed Omarchy version has been verified for this new runtime on a live desktop yet. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
 
-## What is here
+## Install or upgrade Core
 
-- Native Quickshell/QML host with one card-sized bottom-layer Wayland surface per added widget.
-- Installed-widget manager: add, hide, refresh and enter arrangement mode.
-- Drag or keyboard placement, supported-size cycling and monitor selection.
-- Rust `omarchy-widget` CLI: validate, install local package snapshots, list, add, hide, configure, place and remove.
-- Separate widget package manifest and versioned host context.
-- Tests for registry operations and native Qt component rendering, plus GitHub Actions.
-
-Core currently uses Quattro's service loader to start inside the existing shell process. Its root `manifest.json` is that small bootstrap adapter. Individual widgets use **`widget.json`**, install into a widget registry, and do not register as shell plugins. A future first-class Omarchy integration can replace the bootstrap while preserving the widget contract.
-
-## Install Core
-
-Requires an Omarchy **Quattro** checkout with its plugin/service API, Quickshell, Rust/Cargo, `jq` and GNU coreutils. This does not target older Omarchy shells.
+Requires Omarchy, Quickshell (`qs`), systemd user services, jq and Rust 1.89+. From this checkout:
 
 ```bash
-git clone https://github.com/tcballard/omarchy-widget-core.git
-cd omarchy-widget-core
-bash install-local
-omarchy-shell io.github.tcballard.widget-core manage
+bash install-local --update
+omarchy restart shell
+omarchy-widget manage
 ```
 
-The installer builds the locked Rust dependencies, validates Core's bootstrap, copies the runtime into `~/.config/omarchy/plugins/io.github.tcballard.widget-core`, rescans and enables it. It refuses to replace an existing installation. Cloning or installing Core alone does not install any widgets.
+Use `bash install-local` for a first installation. The one-time shell restart replaces the old in-process service. Subsequent host restarts use `omarchy-widget restart`; they do not restart the Omarchy shell. The launcher is installed in `~/.local/bin`.
 
-The built CLI is `./target/release/omarchy-widget`. The installed copy is `~/.config/omarchy/plugins/io.github.tcballard.widget-core/bin/omarchy-widget`; use either path. The installer does not change your PATH.
+## Install and manage widgets
 
-## Use a widget package
-
-Once an individual widget repo is available:
+Use Core for package changes, including updates to already-installed widgets:
 
 ```bash
-# Use a package checkout you have reviewed and trust.
-./target/release/omarchy-widget validate /absolute/path/to/widget-repo
-./target/release/omarchy-widget install /absolute/path/to/widget-repo
-./target/release/omarchy-widget list
-omarchy-shell io.github.tcballard.widget-core manage
+omarchy-widget install /path/to/widget
+omarchy-widget add io.example.widget
+omarchy-widget update /path/to/widget
+omarchy-widget rollback io.example.widget
+omarchy-widget arrange
+omarchy-widget status
+omarchy-widget logs
 ```
 
-Choose **Add** in the manager to load the widget. Installation only copies a snapshot; it does not run the widget. The manager refreshes when opened. After CLI changes, refresh an already-open host explicitly:
+Do not use an old widget's `install-local --update` script to copy registry directories. Core now tracks complete package versions and switches the active version atomically. Updating or rolling back code preserves all instance settings. Code rollback cannot undo a widget-specific settings-schema migration.
+
+To exercise all three sizes and the shared settings editor without another repository:
 
 ```bash
-omarchy-shell io.github.tcballard.widget-core refresh
+omarchy-widget install ./examples/notes
+omarchy-widget add io.github.tcballard.core-example-notes
 ```
 
-In **Arrange** mode, drag a card's header, cycle its supported sizes, move it between monitors or hide it. Focus the card and use arrow keys to move 20 logical pixels, Shift+arrow for 1 pixel, Escape to finish. Positions are clamped to the connected screen; a missing preferred monitor falls back to the first screen without erasing the preference.
+This is a development fixture, not a new product widget.
 
-Other host commands:
+## Widget families
+
+| Family | Grid cells | Logical dimensions |
+|---|---|---|
+| Small | 1 × 1 | 192 × 192 |
+| Medium | 2 × 1 | 400 × 192 |
+| Large | 2 × 2 | 400 × 400 |
+
+The gap and snap increment are 16 logical pixels. Core applies theme scaling. Arrange shows grid dots; drag or use arrow keys to move, and cycle only the sizes the widget supports. Free resizing is intentionally absent. Overlap is currently allowed; snapping does not automatically pack or push other widgets.
+
+API 1 packages remain loadable through a compatibility facade, but their arbitrary dimensions become fixed families: compact → small, standard → medium, wide → large. Existing World Clock layouts may need Large until its individual repository adopts the new family and settings-editor contract. Its local persistence debugging work has not been overwritten.
+
+## State and recovery
+
+Core uses `$XDG_DATA_HOME/omarchy/widgets` and `$XDG_STATE_HOME/omarchy/widgets`, with standard home-directory defaults. The first write migrates layout version 1 and saves `layout-v1.backup.json`. Cities, appearance and enabled state are preserved. Monitor positions are clamped for display; new placement writes snap to the grid.
+
+Settings saves complete only after the helper commits state. A revision conflict retains the editor draft and reports an error. The writer uses a kernel file lock released on process exit, atomic replacement and filesystem sync. Package versions remain on disk for rollback; abandoned versions are not automatically garbage-collected in this release.
+
+`omarchy-widget hide INSTANCE_ID` keeps settings. `remove PACKAGE_ID` unregisters the package and removes its instance settings; retained code is not securely erased. `duplicate INSTANCE_ID` creates independently configurable instances. `stop`, `start`, `restart` and `hide-all` control the shared host.
+
+To uninstall the runtime while preserving widget data:
 
 ```bash
-omarchy-shell io.github.tcballard.widget-core arrange
-omarchy-shell io.github.tcballard.widget-core hide
-omarchy-shell io.github.tcballard.widget-core show
-omarchy-shell io.github.tcballard.widget-core status
+systemctl --user disable --now omarchy-widget-host.service
+omarchy plugin disable io.github.tcballard.widget-core
 ```
 
-`hide` suspends all widget views for the session. Per-widget Hide persists its placement and settings while removing it from the desktop.
+Then remove the Core installation, launcher and service file if desired. Core's installer prints the backup location. Restore that copy to roll back Core itself. After layout migration, old Core needs the backed-up v1 layout; restoring that backup loses settings changes made since migration, so preserve the current layout first.
 
-## Storage and lifecycle
+## Security and verification
 
-| Data | Default location |
-| --- | --- |
-| Installed package snapshots | `~/.local/share/omarchy/widgets/packages/<id>/` |
-| Placement and settings | `~/.local/state/omarchy/widgets/layout.json` |
-| Core bootstrap and binary | `~/.config/omarchy/plugins/io.github.tcballard.widget-core/` |
+The separate process provides crash separation from the shell. **It is not a security sandbox.** Installed QML is trusted code with your user account's access; widgets sharing the host are not isolated from one another. The [runtime decision](docs/runtime-and-security.md) describes the per-package sandbox architecture needed for untrusted marketplace widgets.
 
-`XDG_DATA_HOME` and `XDG_STATE_HOME` override the widget registry roots; they must be absolute paths. The bootstrap follows the current Quattro plugin directory. There is one placement per widget ID in this first version. A World Clock is therefore one package and one card containing multiple timezone rows.
+Portable verification runs Rust tests, rustfmt, Clippy, Qt component checks and a production QML settings/queue → real Rust CLI → disk/reopen integration test. Wayland, restart, theme switching, fractional scaling and multiple monitors still require the [desktop checks](docs/desktop-checks.md).
 
-Use `omarchy-widget help` for the JSON command list. All CLI responses are JSON; failures exit nonzero. `configure ID JSON` replaces the settings object. `place ID JSON` requires `x`, `y`, `monitor` and `size`. `remove ID` deletes both the package and its saved settings; use `hide` to retain them.
-
-To replace Core, disable `io.github.tcballard.widget-core` using `omarchy plugin disable`, move its installation directory aside, then rerun `bash install-local`. Widget packages and layout live separately and survive this. There is no automatic update or binary release channel yet.
-
-If a process crashes during a registry write, a subsequent command may report a stale `.operation-lock`. Confirm no `omarchy-widget` process is running before removing that empty directory from the widget data root. Do not delete the layout to recover a lock. Unsupported or malformed layout files cause commands to fail and remain available for recovery.
-
-## Build and check
-
-```bash
-cargo test --locked
-cargo clippy --locked --all-targets -- -D warnings
-python3 -m pip install 'PySide6==6.11.2'
-python3 tests/qml_smoke.py
-```
-
-The Qt test parses the complete host and renders the production manager using explicit fixtures for Quattro's theme tokens and buttons. It checks empty/populated states and Escape handling. It does **not** run a Wayland compositor. Live Omarchy checks remain in [docs/desktop-checks.md](docs/desktop-checks.md).
-
-## Package authors
-
-Read [the widget contract](docs/widget-contract.md) and [the architecture assumptions](docs/assumptions.md). The contract is experimental and versioned; independent widgets should pin the Core version they test against.
-
-QML runs in the shell process with the user's privileges. The scoped context is an API boundary, **not a security sandbox**. Add only trusted packages. Package validation checks structure, paths and size limits; it does not audit code or block a widget from importing process/network APIs.
-
-Local snapshot installation is the only package transport implemented. Catalogue discovery, remote install/update, signed releases, authoring skills and official Omarchy integration are follow-on work after real widget testing.
-
-MIT licensed.
+See the [widget contract](docs/widget-contract.md), [appearance contract](docs/widget-appearance.md), [review and assumptions](docs/assumptions.md), and [verification record](docs/verification.md).
