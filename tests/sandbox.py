@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='widget-sandbox-') as directory:
     env={**os.environ,'HOME':str(home),'XDG_DATA_HOME':str(home/'.local/share'),'XDG_STATE_HOME':str(home/'.local/state'),'XDG_RUNTIME_DIR':str(runtime),'WAYLAND_DISPLAY':'wayland-test','SSH_AUTH_SOCK':str(runtime/'agent-secret'),'SANDBOX_SECRET':'must-not-inherit'}
     # Capture the production argument construction without requiring namespaces.
     capture=base/'capture'; capture.write_text('#!/usr/bin/python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n');capture.chmod(0o755)
-    plan=config/'sandbox-launch';plan.write_text(source.replace('/usr/bin/bwrap',str(capture)).replace('[[ -S', '[[ -f'))
+    plan=config/'sandbox-launch';plan.write_text(source.replace('/usr/bin/bwrap',str(capture)).replace('[[ -S', '[[ -S' if '--live' in sys.argv else '[[ -f'))
     args=json.loads(subprocess.check_output(['bash',str(plan),'run'],env=env,text=True))
     for flag in ['--unshare-all','--clearenv','--new-session','--die-with-parent']:
         assert flag in args
