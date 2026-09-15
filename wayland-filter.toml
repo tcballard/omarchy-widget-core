@@ -1,0 +1,29 @@
+[logging]
+log_level = "warn"
+
+[filter]
+dry_run = false
+allowed_globals = [
+  "wl_compositor", "wl_subcompositor", "wl_shm", "wl_output", "wl_seat",
+  "xdg_wm_base", "zxdg_decoration_manager_v1", "zxdg_output_manager_v1",
+  "wp_viewporter", "wp_fractional_scale_manager_v1", "wp_presentation",
+  "zwlr_layer_shell_v1"
+]
+
+[[filter.requests]]
+interface = "zwlr_layer_shell_v1"
+requests = ["get_layer_surface"]
+action = "ask"
+block_type = "reject"
+
+[[filter.requests]]
+interface = "zwlr_layer_surface_v1"
+requests = ["set_layer", "set_exclusive_zone", "set_keyboard_interactivity"]
+action = "ask"
+block_type = "reject"
+
+[[filter.requests]]
+interface = "xdg_toplevel"
+requests = ["set_fullscreen"]
+action = "block"
+block_type = "reject"
