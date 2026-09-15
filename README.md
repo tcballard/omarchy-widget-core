@@ -2,7 +2,13 @@
 
 A shared native host for desktop widgets on Omarchy. Core provides the desktop surfaces, an installed-widget manager, placement controls and persistent settings. Each widget lives in its own repository and declares a separate `widget.json` contract.
 
-**Experimental foundation — 0.1.0.** No individual widgets are bundled. This is a working starting point for trying the architecture on a real desktop, not an official Omarchy subsystem or marketplace.
+**Experimental foundation — 0.1.1.** No individual widgets are bundled. This is a working starting point for trying the architecture on a real desktop, not an official Omarchy subsystem or marketplace.
+
+0.1.1 adds quieter rounded frames, [theme-owned widget appearance](docs/widget-appearance.md)
+and opt-in keyboard focus for widget editors. Upgrade from your Core checkout:
+`git pull --ff-only`, then `bash install-local --update`. The installer retains
+the previous Core snapshot and leaves widget packages, cities and layout intact.
+Open the manager to arrange widgets; the idle frame no longer shows a title bar.
 
 ## What is here
 
