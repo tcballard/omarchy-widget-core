@@ -1,0 +1,4 @@
+/target/
+/bin/
+/test-results/
+__pycache__/
