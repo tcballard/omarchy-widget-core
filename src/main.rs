@@ -1,4 +1,5 @@
 mod island;
+mod resources;
 use serde_json::{json, Value};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::{
@@ -673,6 +674,15 @@ fn run(args: &[String]) -> Result<Value> {
     }
     if cmd == "wayland-policy" {
         return island::wayland_policy(args, &env::var("WL_MITM_MSG_JSON").map_err(err)?);
+    }
+    if cmd == "resource-plan" && args.len() == 2 {
+        return Ok(json!(resources::service_args(&args[1])?));
+    }
+    if cmd == "resource-check" && args.len() == 1 {
+        return resources::verify();
+    }
+    if cmd == "island-worker" && args.len() == 4 {
+        return resources::worker(Path::new(&args[1]), Path::new(&args[2]), Path::new(&args[3]));
     }
     if cmd == "supervise" && args.len() == 2 {
         return island::supervise(Path::new(&args[1]));
