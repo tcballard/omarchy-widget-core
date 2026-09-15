@@ -13,22 +13,32 @@ fn read_message(stream: &mut UnixStream, limit: u64, budget: Duration) -> Result
     let deadline = Instant::now() + budget;
     let mut bytes = Vec::new();
     loop {
-        let remaining = deadline.checked_duration_since(Instant::now()).ok_or("Broker read deadline")?;
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or("Broker read deadline")?;
         stream.set_read_timeout(Some(remaining)).map_err(err)?;
         let mut buffer = [0u8; 4096];
         let count = stream.read(&mut buffer).map_err(err)?;
-        if count == 0 { return Ok(bytes); }
-        if bytes.len() + count > limit as usize { return Err("Broker message too large".into()); }
+        if count == 0 {
+            return Ok(bytes);
+        }
+        if bytes.len() + count > limit as usize {
+            return Err("Broker message too large".into());
+        }
         bytes.extend_from_slice(&buffer[..count]);
     }
 }
 fn write_message(stream: &mut UnixStream, mut bytes: &[u8], budget: Duration) -> Result<()> {
     let deadline = Instant::now() + budget;
     while !bytes.is_empty() {
-        let remaining = deadline.checked_duration_since(Instant::now()).ok_or("Broker write deadline")?;
+        let remaining = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or("Broker write deadline")?;
         stream.set_write_timeout(Some(remaining)).map_err(err)?;
         let count = stream.write(bytes).map_err(err)?;
-        if count == 0 { return Err("Broker disconnected".into()); }
+        if count == 0 {
+            return Err("Broker disconnected".into());
+        }
         bytes = &bytes[count..];
     }
     Ok(())
@@ -36,12 +46,16 @@ fn write_message(stream: &mut UnixStream, mut bytes: &[u8], budget: Duration) ->
 pub fn client(path: &str, args: &[String]) -> Result<Value> {
     let mut stream = UnixStream::connect(path).map_err(err)?;
     let request = serde_json::to_vec(args).map_err(err)?;
-    if request.len() > REQUEST_LIMIT as usize { return Err("Broker request too large".into()); }
+    if request.len() > REQUEST_LIMIT as usize {
+        return Err("Broker request too large".into());
+    }
     write_message(&mut stream, &request, Duration::from_secs(2))?;
     stream.shutdown(Shutdown::Write).map_err(err)?;
     let bytes = read_message(&mut stream, RESPONSE_LIMIT, Duration::from_secs(8))?;
     let response: Value = serde_json::from_slice(&bytes).map_err(err)?;
-    if let Some(error) = response["error"].as_str() { return Err(error.into()); }
+    if let Some(error) = response["error"].as_str() {
+        return Err(error.into());
+    }
     Ok(response)
 }
 
@@ -120,7 +134,11 @@ fn serve(listener: &UnixListener, r: &Registry, package: &str, source: &Path) ->
         })();
         let response =
             result.unwrap_or_else(|e| json!({"error":e.chars().take(240).collect::<String>()}));
-        let _ = write_message(&mut stream, response.to_string().as_bytes(), Duration::from_millis(100));
+        let _ = write_message(
+            &mut stream,
+            response.to_string().as_bytes(),
+            Duration::from_millis(100),
+        );
     }
     Ok(())
 }
@@ -362,7 +380,9 @@ mod tests {
         let (mut reader, mut writer) = UnixStream::pair().unwrap();
         let attack = std::thread::spawn(move || {
             for _ in 0..50 {
-                if writer.write_all(b"x").is_err() { break; }
+                if writer.write_all(b"x").is_err() {
+                    break;
+                }
                 std::thread::sleep(Duration::from_millis(20));
             }
         });
