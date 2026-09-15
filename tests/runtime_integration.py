@@ -74,6 +74,8 @@ with tempfile.TemporaryDirectory() as directory:
     body=service[service.index('Item {'):].replace('id: root','id: controller; objectName:"controller"',1)
     # Production expressions refer to root; keep its id and use controller objectName.
     body=body.replace('id: controller;','id: root;')
+    # The harness supplies the runner role; the real Quickshell environment is not present.
+    body=body.replace('Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"', 'false')
     line=next(x for x in body.splitlines() if 'readonly property string helper:' in x)
     body=body.replace(line,'    property string helper: '+json.dumps(str(binary)))
     snapshot=cli('list')
