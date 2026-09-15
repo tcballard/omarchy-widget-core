@@ -6,7 +6,11 @@ destination="$HOME/.config/omarchy/plugins/$core_id"
 for command_name in cargo omarchy omarchy-shell jq; do
   command -v "$command_name" >/dev/null || { echo "Missing command: $command_name" >&2; exit 1; }
 done
-[[ ! -e "$destination" && ! -L "$destination" ]] || { echo "Core already installed at $destination. See README for replacement instructions." >&2; exit 1; }
+[[ $# -eq 0 || ( $# -eq 1 && "$1" == --update ) ]] || { echo 'Usage: bash install-local [--update]' >&2; exit 1; }
+[[ ! -L "$destination" ]] || { echo 'Refusing symlink installation.' >&2; exit 1; }
+if [[ -e "$destination" && "${1:-}" != --update ]]; then
+  echo 'Core already installed. Use bash install-local --update.' >&2; exit 1
+fi
 cargo build --manifest-path "$root/Cargo.toml" --locked --release
 omarchy plugin validate "$root"
 mkdir -p -- "$(dirname -- "$destination")"
@@ -16,6 +20,12 @@ cp -- "$root/manifest.json" "$root/Service.qml" "$root/LICENSE" "$stage/"
 cp -R -- "$root/qml" "$stage/"
 mkdir "$stage/bin"
 install -m755 "$root/target/release/omarchy-widget" "$stage/bin/omarchy-widget"
+if [[ -d "$destination" ]]; then
+  omarchy plugin disable "$core_id"
+  backup=$(mktemp -d "$HOME/.local/state/widget-core-backup.XXXXXXXX")
+  mv -- "$destination" "$backup/core"
+  echo "Previous Core saved at $backup/core"
+fi
 mv -T -- "$stage" "$destination"
 omarchy-shell shell rescanPlugins
 for ((attempt=0;attempt<40;attempt++)); do
