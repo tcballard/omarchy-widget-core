@@ -5,7 +5,15 @@ config="$HOME/.config/omarchy/plugins/$core_id"
 unit=omarchy-widget-host.service
 method=${1:-help}
 ipc() {
-  timeout --kill-after=1s 3s qs ipc -n -p "$config" call -- "$core_id" "$@"
+  local output status
+  output=$(timeout --kill-after=1s 3s qs ipc -n -p "$config" call -- "$core_id" "$@")
+  status=$?
+  (( status == 0 )) || return "$status"
+  case "$output" in
+    'Target not found.'|'Function not found.'|'Too few arguments provided'*|'Too many arguments provided'*)
+      echo "$output" >&2;return 1 ;;
+  esac
+  printf '%s\n' "$output"
 }
 start() {
   # Import only desktop-routing variables, never the entire environment.
