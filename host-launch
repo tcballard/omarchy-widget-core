@@ -1,0 +1,4 @@
+#!/usr/bin/bash
+set -euo pipefail
+config=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec qs --no-duplicate -p "$config"
