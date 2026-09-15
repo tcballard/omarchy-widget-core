@@ -12,12 +12,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: cargo fmt --all
+      - run: cargo fmt --all -- --check
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - name: Export formatted source
-        if: always()
-        run: python3 -c 'import json,pathlib; print(json.dumps({"src/main.rs":pathlib.Path("src/main.rs").read_text()}))'
   qml:
     runs-on: ubuntu-latest
     steps:
@@ -32,4 +29,5 @@ jobs:
       - run: cargo build --locked
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/runtime_integration.py target/debug/omarchy-widget
+      - run: python3 tests/installer.py
       - run: bash -n install-local && bash -n widget && bash -n host-launch
