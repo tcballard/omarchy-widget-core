@@ -29,11 +29,12 @@ FocusScope {
     signal escapeRequested()
     // Mask the entire card, including widget content, to the same rounded edge.
     property Item roundedMask: Rectangle {
+        parent:root
         width: root.width; height: root.height
         radius: root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,40)
         color: "white"; visible:false; layer.enabled:true
     }
-    layer.enabled: true
+    layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
     layer.effect: MultiEffect { maskEnabled:true; maskSource:root.roundedMask }
     activeFocusOnTab: true
     Keys.onPressed: function(event) {
@@ -82,7 +83,7 @@ FocusScope {
             Ui.Button { text:"↗";tooltipText:root.monitorName;focusable:true;onClicked:root.monitorRequested() }
             Ui.Button { text:"Hide";focusable:true;onClicked:root.hideRequested() }
         }
-        Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Style.space(root.number("padding",12,8,24));clip:true}
+        Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Math.max(Style.space(root.number("padding",12,8,24)),Math.ceil(root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,40)*0.3));clip:true}
         Label { visible:root.notice!=="";text:root.notice;color:Color.urgent;font.pixelSize:Style.font.bodySmall;Layout.fillWidth:true;Layout.margins:Style.space(10) }
     }
 }
