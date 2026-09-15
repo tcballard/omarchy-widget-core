@@ -539,7 +539,7 @@ mod tests {
         assert!(r
             .placement("io.example.test", "place", Some("{\"x\":-1}"))
             .is_err());
-        assert!(!r.state.join("layout.json").exists());
+        assert!(r.layout().unwrap()["placements"].as_object().unwrap().is_empty());
     }
     #[test]
     fn future_layout_preserved() {
