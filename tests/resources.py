@@ -42,7 +42,8 @@ elif role=='memory':
     (out/'ready').touch()
     while not (out/'go').exists():time.sleep(.05)
     allocations=[]
-    while True:allocations.append(bytearray(8*1024*1024))
+    for _ in range(64):allocations.append(bytearray(8*1024*1024))
+    raise AssertionError("512 MiB workload survived a 256 MiB limit")
 elif role=='cpu':
     while True:pass
 elif role=='tasks':
@@ -50,6 +51,7 @@ elif role=='tasks':
     try:
         for i in range(100):children.append(subprocess.Popen(['/usr/bin/sleep','60']))
     except OSError:
+        (out/'child-pids').write_text(' '.join(str(child.pid) for child in children))
         (out/'tasks-denied').write_text(str(len(children)))
     else:raise AssertionError('Task limit was not enforced')
     while True:time.sleep(.1)
@@ -60,6 +62,8 @@ elif role=='tasks':
         directory=base/role;directory.mkdir();(directory/'wayland.toml').write_text('fixture')
         unit=f'omarchy-widget-island-test-{role}-{os.getpid()}.service'
         args=json.loads(subprocess.check_output([str(helper),'resource-plan',unit],text=True))
+        # Retain the failed memory unit long enough to inspect its actual OOM result.
+        if role=='memory':args.remove('--collect')
         process=subprocess.Popen(['/usr/bin/systemd-run',*args,str(helper),'island-worker',str(config),str(source),str(directory)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         workers.append(process);units.append(unit)
         until(lambda:(source/'payload.pid').exists())
@@ -84,6 +88,7 @@ elif role=='tasks':
         heartbeat=(hsource/'heartbeat').read_text();(memory[2]/'go').touch()
         until(lambda:memory[1].poll() is not None)
         assert memory[1].returncode!=0
+        assert property(memory[0],'Result')=='oom-kill', 'Must be kernel OOM, not an unrelated child exit'
         until(lambda:float((hsource/'heartbeat').read_text() or 0)>float(heartbeat))
         assert property(host,'ActiveState')=='active' and property(healthy[0],'ActiveState')=='active'
         for pidfile in [memory[2]/'payload.pid',memory[3]/'proxy.pid']:
@@ -102,6 +107,11 @@ elif role=='tasks':
         ctl('stop',host)
         for process in workers:process.wait(timeout=10)
         for unit in units:assert property(unit,'ActiveState') not in ('active','activating','deactivating')
+        for item in [healthy,cpu,tasks]:
+            for pidfile in [item[2]/'payload.pid',item[3]/'proxy.pid']:
+                until(lambda:not Path('/proc',pidfile.read_text()).exists())
+        for pid in (tasks[2]/'child-pids').read_text().split():
+            until(lambda:not Path('/proc',pid).exists())
         print('PASS: stopping Core stops all package services and descendants; literal dollar/space paths preserved')
     finally:
         for unit in units:ctl('stop',unit,check=False)
