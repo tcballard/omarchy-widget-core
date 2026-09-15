@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Effects
 import qs.Commons
 import qs.Ui as Ui
 
@@ -26,6 +27,14 @@ FocusScope {
     signal moved(real dx, real dy)
     signal finishedMoving()
     signal escapeRequested()
+    // Mask the entire card, including widget content, to the same rounded edge.
+    property Item roundedMask: Rectangle {
+        width: root.width; height: root.height
+        radius: root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,40)
+        color: "white"; visible:false; layer.enabled:true
+    }
+    layer.enabled: true
+    layer.effect: MultiEffect { maskEnabled:true; maskSource:root.roundedMask }
     activeFocusOnTab: true
     Keys.onPressed: function(event) {
         if(event.key===Qt.Key_Escape){root.escapeRequested();event.accepted=true;return;}
