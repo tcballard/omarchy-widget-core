@@ -23,6 +23,7 @@ for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX']:
     with tempfile.TemporaryDirectory(prefix='widget install ') as tmp:
         base=Path(tmp); home=base/'home with spaces';home.mkdir()
         repo=base/'source with spaces';shutil.copytree(root,repo,ignore=shutil.ignore_patterns('target','test-results'))
+        (repo/'build-wayland-filter').write_text('#!/usr/bin/bash\nmkdir -p target/wl-mitm-source/target/release\nprintf fake > target/wl-mitm-source/target/release/wl-mitm\n')
         (repo/'sandbox-launch').write_text('#!/usr/bin/bash\n[[ -z ${FAIL_SANDBOX:-} ]]\n')
         commands=base/'commands';commands.mkdir()
         for name in ['cargo','omarchy','omarchy-shell','systemctl','qs','bwrap']:
@@ -33,7 +34,7 @@ for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX']:
         launcher=home/'.local/bin/omarchy-widget';launcher.parent.mkdir(parents=True);launcher.write_text('old launcher')
         env={**os.environ,'HOME':str(home),'PATH':str(commands)+':'+os.environ['PATH']}
         if failure:env[failure]='1'
-        result=subprocess.run(['bash',str(repo/'install-local'),'--update'],env=env,text=True,capture_output=True)
+        result=subprocess.run(['bash',str(repo/'install-local'),'--update'],env=env,text=True,capture_output=True,cwd=repo)
         if failure:
             assert result.returncode!=0,result.stdout
             assert (destination/'previous').read_text()=='old core'
