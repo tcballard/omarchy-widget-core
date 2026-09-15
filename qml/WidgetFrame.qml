@@ -10,6 +10,12 @@ FocusScope {
     property string sizeName: "standard"
     property string monitorName: ""
     property string notice: ""
+    property var appearance: ({})
+    function number(key, fallback, min, max) {
+        var v=appearance[key];
+        return typeof v === "number" && isFinite(v) ? Math.max(min,Math.min(max,v)) : fallback;
+    }
+    readonly property string labelFamily: typeof appearance.fontFamily === "string" ? appearance.fontFamily : Style.font.family
     default property alias contents: slot.data
     signal editRequested()
     signal sizeRequested()
@@ -30,11 +36,19 @@ FocusScope {
         else return;
         root.finishedMoving();event.accepted=true;
     }
-    Rectangle { anchors.fill:parent;color:Color.background;border.width:1;border.color:root.editing?Color.accent:Color.muted;radius:Style.cornerRadius }
+    Rectangle {
+        objectName:"widget-surface"
+        anchors.fill:parent
+        color:Qt.rgba(Color.background.r,Color.background.g,Color.background.b,root.number("backgroundAlpha",1,0.6,1))
+        border.width:root.editing?1:root.number("borderWidth",1,0,3)
+        border.color:root.editing?Color.accent:Qt.rgba(Color.foreground.r,Color.foreground.g,Color.foreground.b,root.number("borderAlpha",0.12,0,1))
+        radius:root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,40)
+    }
     ColumnLayout {
         anchors.fill:parent;spacing:0
         Item {
-            Layout.fillWidth:true;Layout.preferredHeight:Style.space(42)
+            visible:root.editing || root.appearance.showTitle === true
+            Layout.fillWidth:true;Layout.preferredHeight:visible?Style.space(42):0
             MouseArea {
                 id: drag;anchors.fill:parent;enabled:root.editing
                 cursorShape:pressed?Qt.ClosedHandCursor:Qt.OpenHandCursor
@@ -46,11 +60,11 @@ FocusScope {
             }
             RowLayout {
                 anchors.fill:parent;anchors.leftMargin:Style.space(14);anchors.rightMargin:Style.space(7);spacing:Style.space(5)
-                Label { text:root.editing?"⠿  "+root.title:root.title;font.bold:true;Layout.fillWidth:true }
+                Label { text:root.editing?"⠿  "+root.title:root.title;font.family:root.labelFamily;Layout.fillWidth:true }
                 Ui.Button { objectName:"edit-button";text:root.editing?"Done":"Arrange";fontSize:Style.font.bodySmall;focusable:true;onClicked:root.editRequested() }
             }
         }
-        Rectangle { Layout.fillWidth:true;Layout.preferredHeight:1;color:Color.muted;opacity:0.3 }
+        Rectangle { visible:root.editing;Layout.fillWidth:true;Layout.preferredHeight:visible?1:0;color:Color.foreground;opacity:0.1 }
         RowLayout {
             visible:root.editing;Layout.fillWidth:true;Layout.margins:Style.space(4);spacing:0
             Ui.Button { text:root.sizeName;focusable:true;onClicked:root.sizeRequested();Layout.fillWidth:true }
