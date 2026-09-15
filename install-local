@@ -18,11 +18,23 @@ omarchy plugin validate "$root"
 mkdir -p -- "$(dirname -- "$destination")" "$HOME/.local/bin"
 stage=$(mktemp -d "$(dirname -- "$destination")/.widget-core.XXXXXXXX")
 backup=""
+unit_path="$HOME/.config/systemd/user/omarchy-widget-host.service"
+unit_backup=$(mktemp)
+had_unit=false
+if [[ -f "$unit_path" ]]; then cp -- "$unit_path" "$unit_backup";had_unit=true;fi
+launcher_path="$HOME/.local/bin/omarchy-widget"
+launcher_backup=$(mktemp)
+had_launcher=false
+if [[ -f "$launcher_path" ]]; then cp -- "$launcher_path" "$launcher_backup";had_launcher=true;fi
 activated=false
 cleanup() {
   result=$?
   rm -rf -- "$stage"
   if (( result != 0 )) && [[ "$activated" == true ]]; then
+    systemctl --user stop omarchy-widget-host.service >/dev/null 2>&1 || true
+    if [[ "$had_unit" == true ]]; then cp -- "$unit_backup" "$unit_path";else rm -f -- "$unit_path";fi
+    if [[ "$had_launcher" == true ]]; then install -m755 "$launcher_backup" "$launcher_path";else rm -f -- "$launcher_path";fi
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
     omarchy plugin disable "$core_id" >/dev/null 2>&1 || true
     failed=$(mktemp -d "$(dirname -- "$destination")/.widget-core-failed.XXXXXXXX")
     mv -- "$destination" "$failed/core" || true
@@ -33,6 +45,7 @@ cleanup() {
     fi
     echo "Core activation failed; previous installation restored. Failed copy: $failed/core" >&2
   fi
+  rm -f -- "$unit_backup" "$launcher_backup"
 }
 trap cleanup EXIT
 cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/host-launch" "$root/LICENSE" "$stage/"
