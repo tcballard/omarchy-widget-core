@@ -1,0 +1,14 @@
+[package]
+name = "omarchy-widget-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+description = "Native desktop widget host and local package registry for Omarchy"
+
+[dependencies]
+serde_json = "=1.0.151"
+
+[[bin]]
+name = "omarchy-widget"
+path = "src/main.rs"
