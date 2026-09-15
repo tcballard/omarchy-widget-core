@@ -71,6 +71,7 @@ elif role=='tasks':
         assert (group/'memory.oom.group').read_text().strip()=='1'
         return unit,process,source,directory,group
     try:
+        subprocess.run([str(helper),'resource-preflight'],check=True,timeout=20)
         # Unsupported/unlimited cgroups must fail before launching either fixture.
         denied=subprocess.run([str(helper),'island-worker',str(config),str(base),str(base)],capture_output=True,text=True,timeout=5)
         assert denied.returncode and 'resource preflight failed' in denied.stdout
