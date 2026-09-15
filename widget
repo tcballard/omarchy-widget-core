@@ -4,20 +4,9 @@ core_id=io.github.tcballard.widget-core
 config="$HOME/.config/omarchy/plugins/$core_id"
 unit=omarchy-widget-host.service
 method=${1:-help}
-ipc() {
-  local output status
-  output=$(timeout --kill-after=1s 3s qs ipc -n -p "$config" call -- "$core_id" "$@")
-  status=$?
-  (( status == 0 )) || return "$status"
-  case "$output" in
-    'Target not found.'|'Function not found.'|'Too few arguments provided'*|'Too many arguments provided'*)
-      echo "$output" >&2;return 1 ;;
-  esac
-  printf '%s\n' "$output"
-}
 start() {
   # Import only desktop-routing variables, never the entire environment.
-  for name in WAYLAND_DISPLAY DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_DATA_HOME XDG_STATE_HOME; do
+  for name in WAYLAND_DISPLAY XDG_RUNTIME_DIR XDG_DATA_HOME XDG_STATE_HOME; do
     [[ -n ${!name:-} ]] && systemctl --user import-environment "$name"
   done
   systemctl --user start "$unit"
@@ -27,23 +16,20 @@ case "$method" in
   stop) systemctl --user stop "$unit"; exit $? ;;
   restart) systemctl --user restart "$unit"; exit $? ;;
   logs) journalctl --user -u "$unit" -n 80 --no-pager; exit $? ;;
-  status) ipc status; exit $? ;;
+  status)
+    systemctl --user is-active "$unit" || exit $?
+    "$config/bin/omarchy-widget" list; exit $? ;;
+  sandbox-check) exec /usr/bin/bash "$config/sandbox-launch" check ;;
   manage|arrange|refresh|show|hide-all)
     start || exit $?
-    [[ "$method" == hide-all ]] && method=hide
-    for ((attempt=0;attempt<30;attempt++)); do
-      if ipc "$method"; then exit 0; fi
-      sleep 0.1
-    done
-    echo 'Widget host did not respond. Run: omarchy-widget logs' >&2
-    exit 1 ;;
+    "$config/bin/omarchy-widget" control "$method"; exit $? ;;
 esac
 "$config/bin/omarchy-widget" "$@"
 result=$?
 if (( result == 0 )); then
   case "$method" in
     install|update|rollback|remove|add|duplicate|hide|place|configure|save)
-      ipc refresh >/dev/null 2>&1 || true ;;
+      : ;;
   esac
 fi
 exit "$result"
