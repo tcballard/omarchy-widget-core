@@ -28,5 +28,8 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get install -y libegl1 libopengl0
       - run: pip install PySide6==6.11.2
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked
       - run: python3 tests/qml_smoke.py
-      - run: bash -n install-local
+      - run: python3 tests/runtime_integration.py target/debug/omarchy-widget
+      - run: bash -n install-local && bash -n widget && bash -n host-launch
