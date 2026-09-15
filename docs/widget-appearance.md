@@ -19,7 +19,7 @@ The optional `widgets.json` alongside it is a **Core-owned extension**, not an o
 
 Core bounds radius 0–40, border width 0–3, border alpha 0–1, background alpha 0.6–1, padding 8–24 and scale 0.75–2. Theme scale applies to the host; per-instance appearance can override frame tokens but cannot select arbitrary dimensions. The font must exist on the machine; Qt supplies a fallback otherwise.
 
-The idle frame has a soft edge and no title by default. Arrange exposes controls inside the same outer dimensions. A rounded mask clips the whole surface, including widget content. Core owns content padding; widget authors should avoid painting a second card background.
+The idle frame has a soft edge and no title by default. Arrange exposes controls inside the same outer dimensions. GPU rendering masks the whole surface to its rounded outline. Software rendering uses the rounded background with content inset far enough to remain inside the corners; it does not depend on unsupported shader effects. Core owns content padding; widget authors should avoid painting a second card background.
 
 Palette and appearance refresh within five seconds, or immediately with `omarchy-widget refresh`. These are data refreshes, not shell restarts. Geometry, controls and fonts are Core's own components; this release does not implement the shell's entire `shell.toml` styling vocabulary.
 
