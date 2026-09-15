@@ -363,21 +363,40 @@ impl Registry {
         Ok(ids)
     }
     fn palette(&self) -> Value {
-        let path = self.state.parent().unwrap().join("current/theme/colors.toml");
+        let path = self
+            .state
+            .parent()
+            .unwrap()
+            .join("current/theme/colors.toml");
         let mut palette = json!({});
-        let Ok(file) = File::open(&path) else { return palette; };
+        let Ok(file) = File::open(&path) else {
+            return palette;
+        };
         let mut text = String::new();
-        if file.take(16385).read_to_string(&mut text).is_err() || text.len() > 16384 { return palette; }
+        if file.take(16385).read_to_string(&mut text).is_err() || text.len() > 16384 {
+            return palette;
+        }
         // Consume only the documented flat hex palette, not arbitrary TOML.
         for line in text.lines() {
-            let Some((key, raw)) = line.split_once('=') else { continue; };
+            let Some((key, raw)) = line.split_once('=') else {
+                continue;
+            };
             let key = key.trim();
-            if !["foreground", "background", "accent", "red"].contains(&key) { continue; }
+            if !["foreground", "background", "accent", "red"].contains(&key) {
+                continue;
+            }
             let raw = raw.trim();
-            let Some(quote) = raw.chars().next().filter(|c| *c == '\"' || *c == '\'') else { continue; };
-            let Some(end) = raw[1..].find(quote) else { continue; };
-            let value = &raw[1..end+1];
-            if value.starts_with('#') && [4,7,9].contains(&value.len()) && value[1..].bytes().all(|b| b.is_ascii_hexdigit()) {
+            let Some(quote) = raw.chars().next().filter(|c| *c == '\"' || *c == '\'') else {
+                continue;
+            };
+            let Some(end) = raw[1..].find(quote) else {
+                continue;
+            };
+            let value = &raw[1..end + 1];
+            if value.starts_with('#')
+                && [4, 7, 9].contains(&value.len())
+                && value[1..].bytes().all(|b| b.is_ascii_hexdigit())
+            {
                 palette[key] = json!(value);
             }
         }
@@ -406,7 +425,7 @@ impl Registry {
         for id in self.ids(&l)? {
             let validated = self
                 .source(&l, &id)
-                .and_then(|path| validate(&path).map(|m| (path, m)));
+                .and_then(|path| manifest(&path).map(|m| (path, m)));
             match validated {
                 Ok((path, m)) if m["id"] == id => {
                     let mut found = false;
