@@ -12,6 +12,7 @@ Item {
     property var manifest: null
     property string omarchyPath: ""
     property var installed: []
+    property var themeAppearance: ({})
     property string error: ""
     property bool shown: true
     property bool editing: false
@@ -40,6 +41,7 @@ Item {
             if (refreshing) {
                 if (response.api !== 1 || !Array.isArray(response.installed)) throw new Error("Unsupported registry response");
                 installed = response.installed;
+                themeAppearance = response.appearance || {};
                 error = (response.problems || []).join("; ");
             } else Qt.callLater(refresh);
         } catch (e) { error = "" + (e.message || "Core helper unavailable. Run bash install-local."); }
@@ -108,7 +110,7 @@ Item {
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "tcballard-widget-" + metadata.id
             WlrLayershell.layer: WlrLayer.Bottom
-            WlrLayershell.keyboardFocus: root.editing ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+            WlrLayershell.keyboardFocus: root.editing || context.inputRequested ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
             readonly property var monitor: screen ? Hyprland.monitorFor(screen) : null
             readonly property bool obscured: monitor && monitor.activeWorkspace ? monitor.activeWorkspace.hasFullscreen : false
             visible: root.shown && screen !== null && !obscured
@@ -120,11 +122,17 @@ Item {
                 readonly property var settings: window.config.settings
                 readonly property bool active: window.visible
                 readonly property string sizeName: window.sizeName
+                readonly property var appearance: Object.assign({}, root.themeAppearance, window.config.settings.appearance || {})
+                readonly property string saveError: root.error
+                readonly property bool saving: operation.running
+                property bool inputRequested: false
+                function requestInput(enabled) { inputRequested = enabled; }
                 function saveSettings(value) { return root.execute(["configure", window.metadata.id, JSON.stringify(value)]); }
             }
             Core.WidgetFrame {
                 anchors.fill: parent
                 title: window.metadata.name
+                appearance: context.appearance
                 editing: root.editing
                 sizeName: window.sizeName
                 monitorName: window.screen ? window.screen.name : ""
