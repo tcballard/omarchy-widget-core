@@ -53,7 +53,7 @@ cleanup() {
   rm -f -- "$unit_backup" "$launcher_backup"
 }
 trap cleanup EXIT
-cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/host-launch" "$root/sandbox-launch" "$root/wayland-filter.toml" "$root/LICENSE" "$stage/"
+cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/bind-key" "$root/host-launch" "$root/sandbox-launch" "$root/wayland-filter.toml" "$root/LICENSE" "$stage/"
 cp -R -- "$root/qml" "$root/Commons" "$root/Ui" "$stage/"
 mkdir "$stage/bin"
 install -m755 "$root/wayland-policy" "$stage/wayland-policy"
@@ -104,6 +104,9 @@ UNIT
     echo 'Core v0.0.2 installed with a separate widget host. Restart the shell once to replace the old in-process service: omarchy restart shell'
     echo 'After migration, only widgets need restarting: omarchy-widget restart'
     echo "Open manager: omarchy-shell $core_id manage"
+    if ! bash "$destination/bind-key"; then
+      echo 'Core is installed. Configure the shortcut later with: omarchy-widget bind-key'
+    fi
     exit 0
   fi
   sleep 0.1

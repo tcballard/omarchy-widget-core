@@ -36,8 +36,13 @@ jobs:
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/runtime_integration.py target/debug/omarchy-widget
       - run: python3 tests/installer.py
+      - run: python3 tests/keybinding.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tests/workspace.cjs
       - run: python3 tests/sandbox.py
-      - run: bash -n install-local && bash -n widget && bash -n host-launch && bash -n sandbox-launch
+      - run: bash -n install-local && bash -n widget && bash -n host-launch && bash -n sandbox-launch && bash -n bind-key
   wayland:
     runs-on: ubuntu-22.04
     steps:

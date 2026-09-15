@@ -1,0 +1,14 @@
+const assert=require('node:assert/strict');
+const {visible}=require('../qml/Workspace.js');
+let desktop={available:true,monitors:{'DP-1':2,'eDP-1':1}};
+assert.equal(visible(null,'DP-1',null),true);
+assert.equal(visible(undefined,'DP-1',null),true);
+assert.equal(visible(2,'DP-1',desktop),true);
+assert.equal(visible(2,'eDP-1',desktop),false);
+assert.equal(visible(1,'eDP-1',desktop),true);
+assert.equal(visible(2,'missing',desktop),false);
+assert.equal(visible(2,'DP-1',{available:false,monitors:{'DP-1':2}}),false);
+desktop.monitors['DP-1']=3;
+assert.equal(visible(2,'DP-1',desktop),false);
+assert.equal(visible(3,'DP-1',desktop),true);
+console.log('PASS: all-workspace migration, per-monitor matching, switch, missing monitor and unavailable tracking');

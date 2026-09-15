@@ -44,3 +44,9 @@ Core serializes UI writes, coalesces queued placement requests for the same inst
 ## Runtime boundary
 
 Widget QML and its settings editor run in a per-package Bubblewrap island, outside both the main shell and the trusted Core manager. Instances of the same package share a runner. Do not depend on shell services, direct filesystem persistence or raw compositor protocols. Use `widgetContext` and the acknowledged save contract. Core supplies themes through snapshots and mediates durable state; the runner cannot access another package's settings. Settings editors use ordinary floating windows. Network access is denied. See runtime-and-security.md for the filtered display policy and remaining limits.
+
+## Workspace placement extension
+
+Placement has an optional `workspace` field: absent/null means all workspaces; integers 1–9999 select a numbered workspace on the instance's configured monitor. `workspace INSTANCE_ID all|NUMBER` changes this field without changing the widget's settings revision. Existing `place` calls preserve it and `duplicate` copies it.
+
+Snapshots include `desktop: {available, monitors, error?}`. `monitors` maps output names to active numbered workspace IDs, with no titles or window information. The host applies workspace matching before enabling the widget Loader; `widgetContext.active` follows visibility. An unavailable snapshot hides assigned instances. The broker permits workspace assignment only for an instance owned by its package. Existing API 2 contexts and manifest fields remain unchanged.
