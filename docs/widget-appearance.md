@@ -21,6 +21,6 @@ Core bounds radius 0–40, border width 0–3, border alpha 0–1, background al
 
 The idle frame has a soft edge and no title by default. Arrange exposes controls inside the same outer dimensions. GPU rendering masks the whole surface to its rounded outline. Software rendering uses the rounded background with content inset far enough to remain inside the corners; it does not depend on unsupported shader effects. Core owns content padding; widget authors should avoid painting a second card background.
 
-Palette and appearance refresh within five seconds, or immediately with `omarchy-widget refresh`. These are data refreshes, not shell restarts. Geometry, controls and fonts are Core's own components; this release does not implement the shell's entire `shell.toml` styling vocabulary.
+Changes inside the mounted theme directory refresh within about one second. Replacing the theme directory or switching its symlink requires `omarchy-widget restart`, because the sandbox deliberately binds only the selected theme. These are data refreshes, not shell restarts. Geometry, controls and fonts are Core's own components; this release does not implement the shell's entire `shell.toml` styling vocabulary.
 
 Store theme sources in the theme repository. The active directory is generated/staged by Omarchy; verify how a custom `widgets.json` is carried into that directory on the installed Omarchy revision. Missing files are optional and use defaults.
