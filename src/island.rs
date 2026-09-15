@@ -40,6 +40,16 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
             if layout["placements"][edit]["packageId"] != package { snapshot["runtime"]["edit"] = Value::Null; }
             Ok(snapshot)
         }
+        Some("edit-done") if args.len() == 3 => {
+            let _lock = r.lock()?;
+            let mut current = r.layout()?;
+            if current["placements"][&args[1]]["packageId"] != package { return Err("Instance is outside this runner's authority".into()); }
+            if current["runtime"]["edit"]["instance"] == args[1] && current["runtime"]["edit"]["serial"].as_u64().map(|v| v.to_string()).as_deref() == Some(args[2].as_str()) {
+                current["runtime"]["edit"] = Value::Null;
+                r.commit(&mut current)?;
+            }
+            Ok(json!(true))
+        }
         Some(op @ ("save" | "place" | "hide")) => {
             let expected = if op == "hide" { 2 } else { 3 };
             if args.len() != expected || layout["placements"][&args[1]]["packageId"] != package {
@@ -54,7 +64,7 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
 
 fn serve(listener: &UnixListener, r: &Registry, package: &str, source: &Path) -> Result<()> {
     // A fixed connection budget prevents one runner starving all the others.
-    for _ in 0..4 {
+    for _ in 0..1 {
         let (mut stream, _) = match listener.accept() {
             Ok(value) => value,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
@@ -108,8 +118,16 @@ fn toml_string(value: &Path) -> Result<String> {
     // JSON quoting is also valid TOML for these paths; reject non-UTF8 paths.
     serde_json::to_string(value.to_str().ok_or("Non-UTF8 runtime path")?).map_err(err)
 }
+fn runtime_directory(base: &Path, package: &str) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    package.hash(&mut hash);
+    // Socket paths have a small kernel limit. The listener binding, not this hash,
+    // determines authority. A collision fails create_dir, never reuses a listener.
+    base.join(format!("{:016x}", hash.finish()))
+}
 fn launch(config: &Path, base: &Path, package: &str, source: &Path, upstream: &Path) -> Result<Runner> {
-    let directory = base.join(package);
+    let directory = runtime_directory(base, package);
     fs::create_dir(&directory).map_err(err)?;
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).map_err(err)?;
     let socket = directory.join("broker");
@@ -176,7 +194,9 @@ pub fn supervise(config: &Path) -> Result<Value> {
                             eprintln!("Widget {id}: {e}");
                             let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                             failures.insert(id.clone(), (count, Instant::now()));
-                            let _ = fs::remove_dir_all(base.join(id));
+                            if !runners.values().any(|runner| runner.directory == runtime_directory(&base, &id)) {
+                                let _ = fs::remove_dir_all(runtime_directory(&base, &id));
+                            }
                         }
                     }
                 }
@@ -243,6 +263,14 @@ mod tests {
         call(&["save","io.test.a",r#"{"revision":0,"settings":{"city":"Paris"}}"#]).unwrap();
         assert!(call(&["save","io.test.a",r#"{"revision":0,"settings":{"city":"London"}}"#]).is_err());
         assert_eq!(r.layout().unwrap()["placements"]["io.test.a"]["settings"]["city"],"Paris");
+        let socket_path = base.join("broker-test");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let socket_string = socket_path.to_str().unwrap().to_owned();
+        let request = std::thread::spawn(move || client(&socket_string, &["list".into()]));
+        serve(&listener, &r, "io.test.a", &source).unwrap();
+        let response = request.join().unwrap().unwrap();
+        assert_eq!(response["installed"].as_array().unwrap().len(), 1);
+        assert!(!response.to_string().contains("io.test.b"));
         r.deploy(&base.join("io.test.a"),true).unwrap();
         assert!(call(&["list"]).is_err());
         fs::remove_dir_all(base).unwrap();
