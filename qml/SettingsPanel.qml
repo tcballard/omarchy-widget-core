@@ -22,7 +22,7 @@ FocusScope {
             Layout.fillWidth:true
             Ui.Button { text:"Cancel"; enabled:!root.busy; focusable:true; onClicked:root.cancelRequested() }
             Item { Layout.fillWidth:true }
-            Ui.Button { text:root.busy?"Saving…":"Save"; enabled:!root.busy; focusable:true; onClicked:root.saveRequested() }
+            Ui.Button { objectName:"save-button"; text:root.busy?"Saving…":"Save"; enabled:!root.busy; focusable:true; onClicked:root.saveRequested() }
         }
     }
 }
