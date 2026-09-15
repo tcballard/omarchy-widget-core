@@ -55,11 +55,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --locked
-      - name: Start disposable runner user manager with controllers
+      - name: Exercise resource isolation in a disposable user session
         run: |
-          sudo loginctl enable-linger "$USER"
-          sudo systemctl start "user@$(id -u).service"
-          sudo systemctl set-property "user@$(id -u).service" 'Delegate=cpu memory pids'
-          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
-          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
-      - run: python3 tests/resources.py target/debug/omarchy-widget --live
+          sudo useradd --create-home --shell /bin/bash widgettest
+          test_uid=$(id -u widgettest)
+          sudo mkdir -p "/run/systemd/system/user@${test_uid}.service.d"
+          printf '[Service]\nDelegate=cpu memory pids\n' | sudo tee "/run/systemd/system/user@${test_uid}.service.d/controllers.conf" >/dev/null
+          sudo systemctl daemon-reload
+          sudo loginctl enable-linger widgettest
+          sudo systemctl start "user@${test_uid}.service"
+          sudo install -Dm755 target/debug/omarchy-widget /tmp/widget-resource-ci/omarchy-widget
+          sudo install -m644 tests/resources.py /tmp/widget-resource-ci/resources.py
+          sudo -u widgettest env "XDG_RUNTIME_DIR=/run/user/${test_uid}" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${test_uid}/bus" python3 /tmp/widget-resource-ci/resources.py /tmp/widget-resource-ci/omarchy-widget --live
