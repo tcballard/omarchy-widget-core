@@ -30,3 +30,7 @@ Before declaring desktop support, verify the real package through Core on Omarch
 ## Future network widgets
 
 Network support is proposed in [network-widgets.md](network-widgets.md), not currently available. It should add named, permissioned data resources, bounded refresh and cache/stale metadata through Core. Widget authors must not bypass the existing isolation to fetch data.
+
+## Planned cell-grid extension
+
+The accepted [cell-grid design](grid-layout.md) replaces coordinate snapping with occupied footprints and inherits desktop gaps/rounding through Core. It is not implemented yet. Authors should keep layouts responsive to the actual content rectangle and avoid introducing their own exterior spacing.
