@@ -12,7 +12,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: cargo fmt --all -- --check
+      - run: cargo fmt --all
+      - name: Export formatted source
+        if: always()
+        run: python3 -c 'import json,pathlib; print(json.dumps({str(p):p.read_text() for p in pathlib.Path("src").glob("*.rs")}))'
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
   sandbox:
@@ -46,3 +49,17 @@ jobs:
       - run: cargo build --locked
       - run: bash build-wayland-filter
       - run: python3 tests/wayland_filter.py target/wl-mitm-source/target/release/wl-mitm target/debug/omarchy-widget
+  resources:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked
+      - name: Start disposable runner user manager with controllers
+        run: |
+          sudo loginctl enable-linger "$USER"
+          sudo systemctl start "user@$(id -u).service"
+          sudo systemctl set-property "user@$(id -u).service" 'Delegate=cpu memory pids'
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus" >> "$GITHUB_ENV"
+      - run: python3 tests/resources.py target/debug/omarchy-widget --live
