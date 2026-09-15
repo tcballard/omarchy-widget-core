@@ -19,12 +19,13 @@ elif name=='omarchy':
 elif name=='systemctl':
     if 'start' in args and os.getenv('FAIL_START'):sys.exit(1)
 '''
-for failure in ['', 'FAIL_ENABLE', 'FAIL_START']:
+for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX']:
     with tempfile.TemporaryDirectory(prefix='widget install ') as tmp:
         base=Path(tmp); home=base/'home with spaces';home.mkdir()
         repo=base/'source with spaces';shutil.copytree(root,repo,ignore=shutil.ignore_patterns('target','test-results'))
+        (repo/'sandbox-launch').write_text('#!/usr/bin/bash\n[[ -z ${FAIL_SANDBOX:-} ]]\n')
         commands=base/'commands';commands.mkdir()
-        for name in ['cargo','omarchy','omarchy-shell','systemctl','qs']:
+        for name in ['cargo','omarchy','omarchy-shell','systemctl','qs','bwrap']:
             file=commands/name;file.write_text(stub);file.chmod(0o755)
         destination=home/'.config/omarchy/plugins/io.github.tcballard.widget-core'
         destination.mkdir(parents=True);(destination/'previous').write_text('old core')
