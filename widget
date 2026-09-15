@@ -15,7 +15,7 @@ case "$method" in
   start) start; exit $? ;;
   stop) systemctl --user stop "$unit"; exit $? ;;
   restart) systemctl --user restart "$unit"; exit $? ;;
-  logs) journalctl --user -u "$unit" -n 80 --no-pager; exit $? ;;
+  logs) journalctl --user -u "$unit" -u 'omarchy-widget-island-*.service' -n 80 --no-pager; exit $? ;;
   status)
     systemctl --user is-active "$unit" || exit $?
     "$config/bin/omarchy-widget" list; exit $? ;;
