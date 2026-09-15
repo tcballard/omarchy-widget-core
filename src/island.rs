@@ -174,15 +174,14 @@ struct Runner {
     source: PathBuf,
     directory: PathBuf,
     listener: UnixListener,
-    proxy: Child,
+    unit: String,
     child: Child,
 }
 impl Drop for Runner {
     fn drop(&mut self) {
+        resources::stop(&self.unit);
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = self.proxy.kill();
-        let _ = self.proxy.wait();
         let _ = fs::remove_dir_all(&self.directory);
     }
 }
@@ -221,54 +220,19 @@ fn launch(
     );
     let policy_path = directory.join("wayland.toml");
     fs::write(&policy_path, policy).map_err(err)?;
-    let mut proxy = Command::new(config.join("bin/wl-mitm"))
-        .arg(&policy_path)
-        .env("TOKIO_WORKER_THREADS", "1")
-        .stdin(Stdio::null())
-        .spawn()
-        .map_err(err)?;
-    let ready = (|| {
-        for _ in 0..100 {
-            if proxy.try_wait().map_err(err)?.is_some() {
-                return Err("Wayland filter exited before ready".into());
-            }
-            if std::os::unix::fs::FileTypeExt::is_socket(
-                &fs::symlink_metadata(&display)
-                    .map(|m| m.file_type())
-                    .unwrap_or_else(|_| fs::metadata(&directory).unwrap().file_type()),
-            ) {
-                return Ok(());
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        Err("Wayland filter readiness timed out".into())
-    })();
-    if let Err(e) = ready {
-        let _ = proxy.kill();
-        let _ = proxy.wait();
-        return Err(e);
-    }
-    let child = Command::new("/usr/bin/bash")
-        .arg(config.join("sandbox-launch"))
-        .arg("runner")
-        .arg(source)
-        .arg(&socket)
-        .arg(&display)
-        .stdin(Stdio::null())
-        .spawn();
-    let child = match child {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = proxy.kill();
-            let _ = proxy.wait();
-            return Err(err(e));
-        }
-    };
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let unit = format!("omarchy-widget-island-{}-{}-{sequence}.service", std::process::id(), directory.file_name().unwrap().to_string_lossy());
+    let child = Command::new("/usr/bin/systemd-run")
+        .args(resources::service_args(&unit)?)
+        .arg(config.join("bin/omarchy-widget")).arg("island-worker")
+        .arg(config).arg(source).arg(&directory)
+        .stdin(Stdio::null()).spawn().map_err(err)?;
     Ok(Runner {
         source: source.into(),
         directory,
         listener,
-        proxy,
+        unit,
         child,
     })
 }
@@ -349,7 +313,6 @@ pub fn supervise(config: &Path) -> Result<Value> {
             let mut dead = Vec::new();
             for (id, runner) in &mut runners {
                 if runner.child.try_wait().map_err(err)?.is_some()
-                    || runner.proxy.try_wait().map_err(err)?.is_some()
                 {
                     dead.push(id.clone());
                     continue;
