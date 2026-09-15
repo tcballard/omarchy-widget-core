@@ -28,6 +28,18 @@ pub fn service_args(unit: &str) -> Result<Vec<String>> {
     ])
 }
 
+pub fn preflight() -> Result<Value> {
+    let unit = format!("omarchy-widget-island-check-{}.service", std::process::id());
+    let mut args = service_args(&unit)?;
+    // Preflight must not start or depend on an installed Core service.
+    args.retain(|s| !s.starts_with("--property=BindsTo=") && !s.starts_with("--property=After=") && !s.starts_with("--property=PartOf="));
+    let status = Command::new("/usr/bin/systemd-run").args(args)
+        .arg(env::current_exe().map_err(err)?).arg("resource-check")
+        .stdin(Stdio::null()).status().map_err(err)?;
+    if !status.success() { return Err("User-service resource preflight failed; CPU, memory and pids controllers are required".into()); }
+    Ok(json!(true))
+}
+
 fn validate_values(memory: &str, swap: &str, tasks: &str, cpu: &str, oom: &str) -> Result<Value> {
     let numeric = |s: &str| s.trim().parse::<u64>().map_err(err);
     let memory = numeric(memory)?;
