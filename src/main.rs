@@ -685,7 +685,11 @@ fn run(args: &[String]) -> Result<Value> {
         return resources::verify();
     }
     if cmd == "island-worker" && args.len() == 4 {
-        return resources::worker(Path::new(&args[1]), Path::new(&args[2]), Path::new(&args[3]));
+        return resources::worker(
+            Path::new(&args[1]),
+            Path::new(&args[2]),
+            Path::new(&args[3]),
+        );
     }
     if cmd == "supervise" && args.len() == 2 {
         return island::supervise(Path::new(&args[1]));
