@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.tcballard.widget-core",
+  "name": "Widget Core",
+  "version": "0.1.0",
+  "author": "Tom Ballard",
+  "license": "MIT",
+  "description": "Shared native desktop widget host and installed-widget manager.",
+  "kinds": ["service"],
+  "entryPoints": {"service": "Service.qml"}
+}
