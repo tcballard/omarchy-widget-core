@@ -84,7 +84,9 @@ See the [widget contract](docs/widget-contract.md), [appearance contract](docs/w
 
 ## Manager shortcut and workspace assignment (development)
 
-The installer attempts to add **Super+Ctrl+Shift+W → Desktop widgets** to the personal Hyprland bindings file. It supports Omarchy's Lua bindings and older `.conf` bindings, checks the active key map, preserves existing content with a backup and restores it if the binding does not activate. It never replaces a conflicting shortcut. If skipped, run `omarchy-widget bind-key` inside the desktop session or assign `omarchy-widget manage` yourself. Remove the single generated binding line (and its comment) to undo it, then reload Hyprland.
+**Super+Space → Widgets** opens the manager through the application launcher. The installer adds a `Widgets` desktop entry.
+
+The installer attempts to add **Super+Alt+W → Desktop widgets** to the personal Hyprland bindings file. It supports Omarchy's Lua bindings and older `.conf` bindings, checks the active key map, preserves existing content with a backup and restores it if the binding does not activate. It never replaces a conflicting shortcut. If skipped, run `omarchy-widget bind-key` inside the desktop session or assign `omarchy-widget manage` yourself. Remove the single generated binding line (and its comment) to undo it, then reload Hyprland.
 
 In the manager, set each instance's **Workspace** to `all` or a number from `1` to `9999`. Existing instances default to all workspaces. For example:
 
@@ -98,3 +100,9 @@ The widget remains on its configured monitor and appears only while that monitor
 Trusted Core queries Hyprland's local monitor IPC and supplies only monitor names and active workspace IDs through snapshots. The raw compositor socket is still absent from widget sandboxes. Visibility follows the normal approximately one-second refresh, with a short shared query cache. When tracking is unavailable, pinned instances hide and the manager reports the problem; all-workspace instances remain available. This is cooperative presentation, not a new security restriction on hostile Wayland clients.
 
 This development branch remains **v0.0.2**. Real Hyprland shortcut activation, monitor hotplug and workspace switching need XPS acceptance. The network-widget direction is documented in [network-widgets.md](docs/network-widgets.md); network access is not enabled by this change.
+
+To remove the launcher entry, delete `io.github.tcballard.widget-core.desktop` from `${XDG_DATA_HOME:-$HOME/.local/share}/applications`. This does not remove widgets or their settings.
+
+## Building a widget
+
+Follow the [widget authoring standard](docs/widget-authoring.md) alongside the API contract. It separates enforced package/runtime rules from the design, accessibility, lifecycle and verification conventions expected at review.

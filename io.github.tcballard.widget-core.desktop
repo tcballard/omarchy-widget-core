@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Widgets
+Comment=Manage desktop widgets and their workspaces
+Exec=omarchy-widget manage
+Icon=preferences-desktop
+Terminal=false
+Categories=Utility;Settings;
+Keywords=desktop;widgets;clock;workspace;
