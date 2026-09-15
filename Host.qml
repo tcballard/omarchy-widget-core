@@ -11,6 +11,8 @@ Item {
     property var shell: null
     property var manifest: null
     property string omarchyPath: ""
+    readonly property bool managerRole: Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"
+    property string editSerial: ""
     property var installed: []
     property var themeAppearance: ({})
     property string error: ""
@@ -38,6 +40,7 @@ Item {
         return true;
     }
     function configure(id) {
+        if(managerRole) { execute(["edit",id]); return; }
         var item=entry(id);
         if(!item || !item.manifest.settingsEntryPoint) { error="This widget provides its own settings editor."; return; }
         settingsContext.draftSettings=JSON.parse(JSON.stringify(item.placement.settings));
@@ -62,7 +65,11 @@ Item {
                 if(response.runtime) {
                     root.shown=response.runtime.shown !== false;
                     root.editing=response.runtime.editing === true;
-                    root.managerOpen=response.runtime.managerOpen === true;
+                    root.managerOpen=root.managerRole && response.runtime.managerOpen === true;
+                    var edit=response.runtime.edit;
+                    if(!root.managerRole && edit && String(edit.serial)!==root.editSerial) {
+                        root.editSerial=String(edit.serial); root.configure(edit.instance);
+                    }
                 }
                 root.themeAppearance=response.appearance || {};
                 Color.apply(response.palette || {});
@@ -121,15 +128,11 @@ Item {
         property int revision: 0
         readonly property var appearance: root.themeAppearance
     }
-    PanelWindow {
-        visible: root.configuring!==""
+    FloatingWindow {
+        visible: !root.managerRole && root.configuring!==""
         implicitWidth: Style.space(520)
         implicitHeight: Style.space(560)
         color: "transparent"
-        exclusionMode: ExclusionMode.Normal
-        WlrLayershell.namespace: "tcballard-widget-settings"
-        WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
         Core.SettingsPanel {
             anchors.fill: parent
             busy: !!(root.saveStates[root.configuring] && root.saveStates[root.configuring].saving)
@@ -140,7 +143,7 @@ Item {
         }
     }
     Variants {
-        model: Quickshell.screens
+        model: root.managerRole ? Quickshell.screens : []
         PanelWindow {
             required property var modelData
             screen: modelData
@@ -167,7 +170,7 @@ Item {
         }
     }
     Variants {
-        model: root.installed.filter(function(w) { return w.placement && w.placement.enabled; }).map(function(w) { return w.instanceId; })
+        model: root.managerRole ? [] : root.installed.filter(function(w) { return w.placement && w.placement.enabled; }).map(function(w) { return w.instanceId; })
         PanelWindow {
             id: window
             required property string modelData
