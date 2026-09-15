@@ -11,7 +11,7 @@ Assumptions:
 - Small, medium and large cover the initial product. No arbitrary free resizing.
 - A 16-point grid aligns placement; overlap is allowed. Automatic collision resolution is future work.
 - Settings objects are small (8 KiB); the registry is bounded to 1 MiB / 128 instances / 64 active packages.
-- Package code is trusted. The standalone process is not a sandbox.
+- Package code is still trusted. A shared Bubblewrap sandbox restricts filesystem, process and network access, but does not separate widgets or filter the allowed Wayland connection.
 - World Clock remains a single multi-city widget. Its own API 2 layout/editor migration is separate from this Core change.
 - A version rollback changes code, not user settings. Widget authors must version their own settings migrations.
 - Complete version directories may remain after interruption or removal. Automatic garbage collection is deferred to avoid deleting code used by a running host.
