@@ -8,7 +8,7 @@ A shared native desktop-widget host for Omarchy: fixed widget families, a snap g
 
 ## Install or upgrade Core
 
-Requires Omarchy, Quickshell (`qs`), systemd user services, jq and Rust 1.89+. From this checkout:
+Requires Omarchy, Quickshell (`qs`), systemd user services, jq, Bubblewrap (`bubblewrap`) and Rust 1.89+. The installer checks namespace support before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
 
 ```bash
 bash install-local --update
@@ -74,7 +74,9 @@ Then remove the Core installation, launcher and service file if desired. Core's 
 
 ## Security and verification
 
-The separate process provides crash separation from the shell. **It is not a security sandbox.** Installed QML is trusted code with your user account's access; widgets sharing the host are not isolated from one another. The [runtime decision](docs/runtime-and-security.md) describes the per-package sandbox architecture needed for untrusted marketplace widgets.
+The host now runs in a **mandatory shared Bubblewrap sandbox**: code and package files are read-only, only Core state is persistently writable, networking and host-process visibility are isolated, and session credentials/buses are not inherited. The service limits memory, CPU and process count. `omarchy-widget sandbox-check` verifies that the namespace policy can start.
+
+This is **not per-package isolation**. Widgets still share Core state and an unfiltered Wayland connection. Install trusted widgets only; this is not yet a boundary for hostile marketplace code. Network widgets will not work until a broker/permission model exists. Software rendering is used to avoid exposing GPU devices. Theme-directory replacement requires `omarchy-widget restart` to remount the active theme. See the [runtime decision](docs/runtime-and-security.md) for exact limits.
 
 Portable verification runs Rust tests, rustfmt, Clippy, Qt component checks and a production QML settings/queue → real Rust CLI → disk/reopen integration test. Wayland, restart, theme switching, fractional scaling and multiple monitors still require the [desktop checks](docs/desktop-checks.md).
 
