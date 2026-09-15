@@ -133,6 +133,8 @@ Item {
         readonly property var appearance: root.themeAppearance
     }
     FloatingWindow {
+        title: "Widget settings"
+        onClosed: root.closeSettings()
         visible: !root.managerRole && root.configuring!==""
         implicitWidth: Style.space(520)
         implicitHeight: Style.space(560)
