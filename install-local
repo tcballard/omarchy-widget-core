@@ -3,7 +3,7 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 core_id=io.github.tcballard.widget-core
 destination="$HOME/.config/omarchy/plugins/$core_id"
-for command_name in cargo omarchy omarchy-shell jq qs systemctl bwrap git; do
+for command_name in cargo omarchy omarchy-shell jq qs systemctl systemd-run timeout bwrap git; do
   command -v "$command_name" >/dev/null || { echo "Missing command: $command_name" >&2; exit 1; }
 done
 [[ $# -eq 0 || ( $# -eq 1 && "$1" == --update ) ]] || { echo 'Usage: bash install-local [--update]' >&2; exit 1; }
@@ -91,7 +91,7 @@ TimeoutStopSec=5
 KillMode=control-group
 NoNewPrivileges=yes
 MemoryMax=512M
-TasksMax=64
+TasksMax=256
 CPUQuota=100%
 
 [Install]
