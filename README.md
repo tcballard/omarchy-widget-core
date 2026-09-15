@@ -8,7 +8,7 @@ A shared native desktop-widget host for Omarchy: fixed widget families, a snap g
 
 ## Install or upgrade Core
 
-Requires Omarchy, Quickshell (`qs`), systemd user services, jq, Bubblewrap (`bubblewrap`) Git and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
+Requires Omarchy, Quickshell (`qs`), systemd user services, jq, Bubblewrap (`bubblewrap`), Git and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
 
 ```bash
 bash install-local --update
