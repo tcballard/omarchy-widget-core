@@ -17,6 +17,8 @@ FocusScope {
     }
     readonly property string labelFamily: typeof appearance.fontFamily === "string" ? appearance.fontFamily : Style.font.family
     default property alias contents: slot.data
+    property bool configurable: false
+    signal configureRequested()
     signal editRequested()
     signal sizeRequested()
     signal monitorRequested()
@@ -28,7 +30,7 @@ FocusScope {
     Keys.onPressed: function(event) {
         if(event.key===Qt.Key_Escape){root.escapeRequested();event.accepted=true;return;}
         if(!root.editing)return;
-        var d=event.modifiers&Qt.ShiftModifier?1:20;
+        var d=Style.space(16);
         if(event.key===Qt.Key_Left)root.moved(-d,0);
         else if(event.key===Qt.Key_Right)root.moved(d,0);
         else if(event.key===Qt.Key_Up)root.moved(0,-d);
@@ -69,9 +71,10 @@ FocusScope {
             visible:root.editing;Layout.fillWidth:true;Layout.margins:Style.space(4);spacing:0
             Ui.Button { text:root.sizeName;focusable:true;onClicked:root.sizeRequested();Layout.fillWidth:true }
             Ui.Button { text:"Monitor →";tooltipText:root.monitorName;focusable:true;onClicked:root.monitorRequested() }
+            Ui.Button { visible:root.configurable; text:"Settings";focusable:true;onClicked:root.configureRequested() }
             Ui.Button { text:"Hide";focusable:true;onClicked:root.hideRequested() }
         }
-        Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;clip:true}
+        Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Style.space(root.number("padding",12,8,24));clip:true}
         Label { visible:root.notice!=="";text:root.notice;color:Color.urgent;font.pixelSize:Style.font.bodySmall;Layout.fillWidth:true;Layout.margins:Style.space(10) }
     }
 }
