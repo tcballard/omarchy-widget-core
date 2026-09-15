@@ -7,6 +7,8 @@ checkout="$root/target/wl-mitm-source"
 if [[ ! -d "$checkout/.git" ]]; then
   git clone https://github.com/PeterCxy/wl-mitm.git "$checkout"
 fi
+git -C "$checkout" diff --exit-code
+git -C "$checkout" diff --cached --exit-code
 git -C "$checkout" checkout --detach "$revision"
 [[ "$(git -C "$checkout" rev-parse HEAD)" == "$revision" ]]
 (cd "$checkout" && cargo run --locked -p protogen && cargo build --locked --release)
