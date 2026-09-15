@@ -79,8 +79,7 @@ FocusScope {
         RowLayout {
             visible:root.editing;Layout.fillWidth:true;Layout.margins:Style.space(4);spacing:0
             Ui.Button { text:root.sizeName;focusable:true;onClicked:root.sizeRequested();Layout.fillWidth:true }
-            Ui.Button { text:"Monitor →";tooltipText:root.monitorName;focusable:true;onClicked:root.monitorRequested() }
-            Ui.Button { visible:root.configurable; text:"Settings";focusable:true;onClicked:root.configureRequested() }
+            Ui.Button { text:"↗";tooltipText:root.monitorName;focusable:true;onClicked:root.monitorRequested() }
             Ui.Button { text:"Hide";focusable:true;onClicked:root.hideRequested() }
         }
         Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Style.space(root.number("padding",12,8,24));clip:true}
