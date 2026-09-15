@@ -1,60 +1,26 @@
-# Widget appearance — Core 0.1.1
+# Widget appearance · v0.0.2
 
-Core owns the card frame; widgets receive the same resolved appearance through
-`widgetContext.appearance`. Palette colours and scale remain live bindings to
-Omarchy's `Color` and `Style`. This is a Core extension, not an upstream
-`shell.toml` section. No global theme changes are required.
+Core's standalone host reads the active Omarchy `colors.toml` foundational palette from `$XDG_STATE_HOME/omarchy/current/theme`, using `~/.local/state` by default. It accepts flat quoted hex values for foreground, background, accent and red. Unsupported or missing values use safe defaults. This intentionally consumes published theme data without importing the main shell engine.
 
-Theme authors can ship a root **widgets.json** alongside colors.toml:
+The optional `widgets.json` alongside it is a **Core-owned extension**, not an official Omarchy theme API:
 
 ```json
 {
-  "radius": 16,
-  "borderWidth": 1,
+  "radius": 18,
+  "borderWidth": 0,
   "borderAlpha": 0.08,
-  "backgroundAlpha": 0.98,
-  "fontFamily": "sans-serif",
-  "separatorAlpha": 0.05,
+  "backgroundAlpha": 1,
+  "padding": 12,
+  "fontFamily": "Inter",
+  "scale": 1,
   "showTitle": false
 }
 ```
 
-This is a starting point for a soft Familiar-style treatment. It is not an
-exact reproduction of that theme. No shadow or compositor blur is added.
-Transparency changes only the background, not text opacity.
+Core bounds radius 0–40, border width 0–3, border alpha 0–1, background alpha 0.6–1, padding 8–24 and scale 0.75–2. Theme scale applies to the host; per-instance appearance can override frame tokens but cannot select arbitrary dimensions. The font must exist on the machine; Qt supplies a fallback otherwise.
 
-Core reads the staged file at `$XDG_STATE_HOME/omarchy/current/theme/widgets.json`
-(default `~/.local/state/omarchy/current/theme/widgets.json`) when refreshing.
-Edit the source theme, reapply it, then run:
+The idle frame has a soft edge and no title by default. Arrange exposes controls inside the same outer dimensions. A rounded mask clips the whole surface, including widget content. Core owns content padding; widget authors should avoid painting a second card background.
 
-```bash
-omarchy-shell io.github.tcballard.widget-core refresh
-```
+Palette and appearance refresh within five seconds, or immediately with `omarchy-widget refresh`. These are data refreshes, not shell restarts. Geometry, controls and fonts are Core's own components; this release does not implement the shell's entire `shell.toml` styling vocabulary.
 
-If your theme installer does not stage this additional file, use the per-widget
-override below. Colours/scale update through normal shell bindings; JSON
-appearance overrides are refreshed explicitly, not by a background watcher.
-
-The optional `appearance` object in each widget's saved settings overrides the
-theme file. Its other settings must be retained when configuring it through CLI.
-World Clock's city editor preserves this object when saving cities.
-
-Supported values:
-
-| Key | Range / default | Owner |
-| --- | --- | --- |
-| radius | 0–40 screen logical pixels; default max(theme rounding, scaled 12) | Core frame |
-| borderWidth | 0–3 pixels; default 1 | Core frame |
-| borderAlpha | 0–1; default 0.12 | Core frame |
-| backgroundAlpha | 0.6–1; default 1 | Core frame |
-| showTitle | true to retain idle title; default false | Core frame |
-| fontFamily | fontconfig family; default shell family | Frame / participating widget labels |
-| separatorAlpha | 0–1; default 0.07 | World Clock rows |
-
-Use radius 0 and showTitle true for the original angular presentation. Arrange
-mode always restores a visible accented frame, header and movement controls.
-Open the manager or use the `arrange` IPC command to enter it. Core limits the
-theme file to an 8 KiB JSON object and falls back with an error if malformed.
-
-Widgets should support shared appearance keys rather than interpreting theme
-names. Clock digits retain the shell's fixed-width font for alignment.
+Store theme sources in the theme repository. The active directory is generated/staged by Omarchy; verify how a custom `widgets.json` is carried into that directory on the installed Omarchy revision. Missing files are optional and use defaults.
