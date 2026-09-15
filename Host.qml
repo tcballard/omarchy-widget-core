@@ -2,7 +2,6 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
-import Quickshell.Hyprland
 import qs.Commons
 import "qml" as Core
 import "qml/Grid.js" as Grid
@@ -31,6 +30,7 @@ Item {
         return accepted;
     }
     function refresh() { return execute(["list"]); }
+    function control(method) { return execute(["control",method]); }
     function save(id, value, revision) {
         if (saveStates[id] && saveStates[id].saving) return false;
         if (!execute(["save",id,JSON.stringify({revision:revision,settings:value})],id)) return false;
@@ -59,6 +59,11 @@ Item {
             if(request.args[0] === "list") {
                 if(response.api !== 2 || !Array.isArray(response.installed)) { root.error="Unsupported Core response"; return; }
                 root.installed=response.installed;
+                if(response.runtime) {
+                    root.shown=response.runtime.shown !== false;
+                    root.editing=response.runtime.editing === true;
+                    root.managerOpen=response.runtime.managerOpen === true;
+                }
                 root.themeAppearance=response.appearance || {};
                 Color.apply(response.palette || {});
                 Style.apply(root.themeAppearance);
@@ -77,14 +82,14 @@ Item {
         return Quickshell.screens.length ? Quickshell.screens[0] : null;
     }
     Component.onCompleted: refresh()
-    Timer { interval:5000; running:true; repeat:true; onTriggered:root.refresh() }
+    Timer { interval:1000; running:true; repeat:true; onTriggered:root.refresh() }
     IpcHandler {
         target: "io.github.tcballard.widget-core"
         function manage(): void { root.managerOpen = !root.managerOpen; if(root.managerOpen) root.refresh(); }
         function refresh(): bool { return root.refresh(); }
         function show(): void { root.shown = true; }
-        function hide(): void { root.shown = false; root.editing = false; }
-        function arrange(): void { root.shown = true; root.editing = !root.editing; }
+        function hide(): void { root.shown = false; root.control("finish-arrange"); }
+        function arrange(): void { root.shown = true; root.control("arrange"); }
         function status(): string { return JSON.stringify({api:2,version:"0.0.2",installed:root.installed.length,shown:root.shown,editing:root.editing,busy:operation.busy,error:root.error}); }
     }
     PanelWindow {
@@ -101,11 +106,11 @@ Item {
             entries: root.installed
             busy: operation.busy
             error: root.error
-            onConfigureRequested: function(id) { root.managerOpen=false;root.configure(id); }
-            onCloseRequested: root.managerOpen = false
+            onConfigureRequested: function(id) { root.control("close-manager");root.managerOpen=false;root.configure(id); }
+            onCloseRequested: { root.managerOpen=false;root.control("close-manager"); }
             onRefreshRequested: root.refresh()
             onToggleRequested: function(id, enabled) { root.execute([enabled ? "add" : "hide", id]); }
-            onArrangeRequested: { root.editing = !root.editing; root.shown = true; root.managerOpen = false; }
+            onArrangeRequested: { root.control("arrange"); root.shown = true; root.managerOpen = false;root.control("close-manager"); }
         }
     }
     QtObject {
@@ -189,9 +194,9 @@ Item {
             WlrLayershell.namespace: "tcballard-widget-" + modelData
             WlrLayershell.layer: WlrLayer.Bottom
             WlrLayershell.keyboardFocus: root.editing || context.inputRequested ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
-            readonly property var monitor: screen ? Hyprland.monitorFor(screen) : null
-            readonly property bool obscured: monitor && monitor.activeWorkspace ? monitor.activeWorkspace.hasFullscreen : false
-            visible: root.shown && screen !== null && !obscured
+            // No compositor command socket is exposed to the sandbox.
+            // Bottom-layer surfaces remain behind fullscreen windows.
+            visible: root.shown && screen !== null
             function place(size, monitorName) {
                 return root.execute(["place", modelData, JSON.stringify({x:margins.left/scale,y:margins.top/scale,monitor:monitorName,size:size})]);
             }
@@ -230,8 +235,8 @@ Item {
                 notice: context.saveError || (context.saving ? "Saving…" : "")
                 configurable: !!window.metadata.settingsEntryPoint
                 onConfigureRequested: root.configure(window.modelData)
-                onEditRequested: root.editing = !root.editing
-                onEscapeRequested: root.editing = false
+                onEditRequested: root.control("arrange")
+                onEscapeRequested: root.control("finish-arrange")
                 onHideRequested: root.execute(["hide", window.modelData])
                 onMoved: function(dx,dy) { window.moving=true; window.positionX = Math.max(0,window.positionX+dx/window.scale); window.positionY = Math.max(0,window.positionY+dy/window.scale); }
                 onFinishedMoving: { window.place(window.sizeName, window.config.monitor);window.moving=false; }
