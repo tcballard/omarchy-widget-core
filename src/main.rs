@@ -1,3 +1,4 @@
+mod grid;
 mod island;
 mod resources;
 mod workspaces;
@@ -310,6 +311,7 @@ impl Registry {
                 || !p["monitor"].as_str().is_some_and(|s| s.len() <= 120)
                 || !p["size"].is_string()
                 || !workspaces::valid(&p["workspace"])
+                || !grid::valid_preference(p)
             {
                 return Err("Invalid placement; layout preserved".into());
             }
@@ -436,7 +438,19 @@ impl Registry {
         Ok(json!({"runtime":runtime,"revision":l["revision"]}))
     }
     fn snapshot(&self) -> Result<Value> {
-        let l = self.layout()?;
+        let mut l = self.layout()?;
+        let desktop = workspaces::snapshot();
+        if grid::migrate(&mut l["placements"], &desktop) {
+            // Polling must not terminate the supervisor when an external writer holds the lock.
+            if let Ok(_lock) = self.lock() {
+                let mut fresh = self.layout()?;
+                if grid::migrate(&mut fresh["placements"], &desktop) {
+                    self.commit(&mut fresh)?;
+                }
+                l = fresh;
+            }
+        }
+        let effective = grid::resolve(&l["placements"], &desktop);
         let mut widgets = Vec::new();
         let mut problems = Vec::new();
         let theme_file = self
@@ -467,7 +481,7 @@ impl Registry {
                             continue;
                         }
                         found = true;
-                        widgets.push(json!({"instanceId":instance,"packageId":id,"definitionId":"main","manifest":m,"directory":path,"placement":p}));
+                        widgets.push(json!({"instanceId":instance,"packageId":id,"definitionId":"main","manifest":m,"directory":path,"placement":p,"effective":effective[instance],"occupancyIndex":effective.as_object().unwrap().keys().position(|id| id==instance)}));
                     }
                     if !found {
                         widgets.push(json!({"instanceId":id,"packageId":id,"definitionId":"main","manifest":m,"directory":path,"placement":null}));
@@ -480,7 +494,7 @@ impl Registry {
             }
         }
         Ok(
-            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"],"desktop":if l["placements"].as_object().unwrap().values().any(|p| !p["workspace"].is_null()) { workspaces::snapshot() } else { json!({"available":true,"monitors":{}}) }}),
+            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"],"desktop":desktop,"occupancy":effective.as_object().unwrap().values().cloned().collect::<Vec<_>>()}),
         )
     }
     fn install(&self, source: &Path) -> Result<Value> {
@@ -560,11 +574,23 @@ impl Registry {
         Ok(json!({"rolledBack":id,"revision":l["revision"]}))
     }
     fn placement(&self, id: &str, operation: &str, value: Option<&str>) -> Result<Value> {
+        self.placement_using(id, operation, value, workspaces::snapshot)
+    }
+    fn placement_using(
+        &self,
+        id: &str,
+        operation: &str,
+        value: Option<&str>,
+        desktop: impl FnOnce() -> Value,
+    ) -> Result<Value> {
         let _lock = self.lock()?;
         if !id_ok(id) {
             return Err("Invalid instance ID".into());
         }
         let mut l = self.layout()?;
+        let desktop = desktop();
+        grid::migrate(&mut l["placements"], &desktop);
+        let current = grid::resolve(&l["placements"], &desktop);
         let package_id = l["placements"][id]["packageId"]
             .as_str()
             .unwrap_or(id)
@@ -585,12 +611,18 @@ impl Registry {
         if operation == "duplicate" {
             l["placements"][&instance] = l["placements"][id].clone();
         }
+        let activation_order = l["revision"].as_u64().unwrap_or(0) + 1;
         let p = &mut l["placements"][&instance];
         if p.is_null() {
-            *p = json!({"packageId":package_id,"definitionId":"main","revision":0,"enabled":false,"x":16,"y":16,"monitor":"","size":m["defaultFamily"],"settings":m["defaults"]});
+            *p = json!({"packageId":package_id,"definitionId":"main","revision":0,"enabled":false,"x":0,"y":0,"monitor":"","cell":{"column":0,"row":0},"size":m["defaultFamily"],"settings":m["defaults"]});
         }
         match operation {
-            "add" | "duplicate" => p["enabled"] = json!(true),
+            "add" | "duplicate" => {
+                if p["enabled"] != true || operation == "duplicate" {
+                    p["activationOrder"] = json!(activation_order);
+                }
+                p["enabled"] = json!(true);
+            }
             "hide" => p["enabled"] = json!(false),
             "workspace" => {
                 let raw = value.ok_or("Missing workspace: use all or 1–9999")?;
@@ -637,27 +669,45 @@ impl Registry {
                     return Err("Placement too large".into());
                 }
                 let v: Value = serde_json::from_str(raw).map_err(err)?;
-                if !["x", "y"]
+                if !["column", "row"]
                     .iter()
-                    .all(|k| v[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n)))
-                    || !v["monitor"].as_str().is_some_and(|s| s.len() <= 120)
+                    .all(|k| v[*k].as_u64().is_some_and(|n| n <= 10000))
+                    || !v["monitor"]
+                        .as_str()
+                        .is_some_and(|s| !s.is_empty() && s.len() <= 120)
                 {
-                    return Err("Invalid placement".into());
+                    return Err("Placement requires column, row, monitor and size".into());
                 }
                 let size = family(v["size"].as_str().unwrap_or(""))?;
                 if !m["families"].as_array().unwrap().contains(&json!(size)) {
                     return Err("Unsupported widget family".into());
                 }
-                // UI snaps in screen coordinates; CLI enforces the same 16px grid.
-                for k in ["x", "y"] {
-                    p[k] = json!((v[k].as_f64().unwrap() / 16.0).round() * 16.0);
-                }
+                p["cell"] = json!({"column":v["column"],"row":v["row"]});
                 p["monitor"] = v["monitor"].clone();
                 p["size"] = json!(size);
             }
             _ => return Err("Unknown operation".into()),
         }
-        let placement = p.clone();
+        if operation == "place" {
+            grid::validate_change(&instance, p, &current, &desktop)?;
+        } else if operation == "workspace" && p["enabled"] == true {
+            // Changing workspace must not silently displace any existing occupant.
+            if let Some(c) = current.get(&instance) {
+                let mut target = p.clone();
+                target["monitor"] = c["monitor"].clone();
+                target["cell"] = json!({"column":c["column"],"row":c["row"]});
+                grid::validate_change(&instance, &target, &current, &desktop)?;
+            }
+        }
+        if operation == "duplicate" || (operation == "add" && p["monitor"] == "") {
+            // New instances reserve a free preference; existing hidden instances keep theirs.
+            let resolved = grid::resolve(&l["placements"], &desktop);
+            if let Some(c) = resolved.get(&instance) {
+                l["placements"][&instance]["monitor"] = c["monitor"].clone();
+                l["placements"][&instance]["cell"] = json!({"column":c["column"],"row":c["row"]});
+            }
+        }
+        let placement = l["placements"][&instance].clone();
         self.commit(&mut l)?;
         Ok(json!({"updated":instance,"placement":placement,"revision":l["revision"]}))
     }
@@ -1067,14 +1117,15 @@ mod tests {
         };
         r.install(&src).unwrap();
         let ack = r
-            .placement(
+            .placement_using(
                 "io.example.test",
                 "place",
-                Some(r#"{"x":39,"y":73,"monitor":"DP-1","size":"medium"}"#),
+                Some(r#"{"column":1,"row":2,"monitor":"DP-1","size":"medium"}"#),
+                grid::tests::desktop,
             )
             .unwrap();
-        assert_eq!(ack["placement"]["x"], 32.0);
-        assert_eq!(ack["placement"]["y"], 80.0);
+        assert_eq!(ack["placement"]["cell"]["column"], 1);
+        assert_eq!(ack["placement"]["cell"]["row"], 2);
         assert!(r
             .placement(
                 "io.example.test",
@@ -1085,6 +1136,59 @@ mod tests {
         m["families"] = json!(["medium", "medium"]);
         fs::write(src.join("widget.json"), m.to_string()).unwrap();
         assert!(validate(&src).is_err());
+    }
+    #[test]
+    fn grid_writes_are_atomic_and_do_not_move_other_instances() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement_using("io.example.test", "add", None, grid::tests::desktop)
+            .unwrap();
+        let duplicate = r
+            .placement_using("io.example.test", "duplicate", None, grid::tests::desktop)
+            .unwrap();
+        let id = duplicate["updated"].as_str().unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        assert_eq!(duplicate["placement"]["cell"]["column"], 2);
+        let target = r#"{"column":0,"row":0,"size":"medium","monitor":"DP-1"}"#;
+        assert!(r
+            .placement_using(id, "place", Some(target), grid::tests::desktop)
+            .is_err());
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        r.placement_using(id, "workspace", Some("2"), grid::tests::desktop)
+            .unwrap();
+        r.placement_using(
+            "io.example.test",
+            "workspace",
+            Some("1"),
+            grid::tests::desktop,
+        )
+        .unwrap();
+        r.placement_using(id, "place", Some(target), grid::tests::desktop)
+            .unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        assert!(r
+            .placement_using(id, "workspace", Some("all"), grid::tests::desktop)
+            .is_err());
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        r.placement_using("io.example.test", "hide", None, grid::tests::desktop)
+            .unwrap();
+        r.placement_using(id, "workspace", Some("all"), grid::tests::desktop)
+            .unwrap();
+        r.placement_using("io.example.test", "add", None, grid::tests::desktop)
+            .unwrap();
+        let resolved = grid::resolve(&r.layout().unwrap()["placements"], &grid::tests::desktop());
+        assert_eq!(resolved[id]["column"], 0);
+        assert_eq!(resolved["io.example.test"]["column"], 2);
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.test"]["cell"]["column"],
+            0
+        );
     }
     #[test]
     fn invalid_update_leaves_current_package_and_state_intact() {

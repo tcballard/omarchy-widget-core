@@ -21,19 +21,25 @@ fn parse(bytes: &[u8]) -> Result<Value> {
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 120)
             .ok_or("Invalid monitor name")?;
-        let id = monitor["activeWorkspace"]["id"]
-            .as_i64()
-            .ok_or("Missing active workspace")?;
+        let workspace = &monitor["activeWorkspace"];
+        // Current Hyprland uses an address; older builds use an integer id.
+        let id = if let Some(id) = workspace["id"].as_i64() {
+            id
+        } else if let Some(address) = workspace["address"].as_str() {
+            address.parse::<i64>().unwrap_or(0)
+        } else {
+            return Err("Missing active workspace".into());
+        };
         // Ignore special-workspace overlays: assignment means the numbered workspace underneath.
         result.insert(name.into(), json!(id));
     }
     Ok(Value::Object(result))
 }
-fn query(path: &Path) -> Result<Value> {
+fn request(path: &Path, command: &[u8]) -> Result<Value> {
     let mut socket = UnixStream::connect(path).map_err(err)?;
     let budget = Duration::from_millis(100);
     socket.set_write_timeout(Some(budget)).map_err(err)?;
-    socket.write_all(b"j/monitors").map_err(err)?;
+    socket.write_all(command).map_err(err)?;
     let deadline = Instant::now() + budget;
     let mut bytes = Vec::new();
     loop {
@@ -54,7 +60,36 @@ fn query(path: &Path) -> Result<Value> {
         }
         bytes.extend_from_slice(&buf[..count]);
     }
-    parse(&bytes)
+    serde_json::from_slice(&bytes).map_err(err)
+}
+fn query(path: &Path) -> Result<Value> {
+    project(|command| request(path, command.as_bytes()))
+}
+fn project(mut request: impl FnMut(&str) -> Result<Value>) -> Result<Value> {
+    let raw = request("j/monitors")?;
+    let monitors = parse(&serde_json::to_vec(&raw).map_err(err)?)?;
+    let mut option = |name: &str| -> Result<Value> {
+        let v = request(&format!("j/getoption {name}"))?;
+        for key in ["custom", "css", "int", "float"] {
+            if !v[key].is_null() {
+                return Ok(v[key].clone());
+            }
+        }
+        Err(format!("Missing desktop option {name}"))
+    };
+    let inside = grid::edges(&option("general:gaps_in")?)?;
+    let outside = grid::edges(&option("general:gaps_out")?)?;
+    let border = option("general:border_size")?
+        .as_f64()
+        .filter(|v| (0.0..=100.0).contains(v))
+        .ok_or("Invalid border")?;
+    let radius = option("decoration:rounding")?
+        .as_f64()
+        .filter(|v| (0.0..=1000.0).contains(v))
+        .ok_or("Invalid rounding")?;
+    Ok(
+        json!({"available":true,"monitors":monitors,"grids":grid::screens(&raw,inside,outside)?,"frame":{"borderWidth":border,"radius":radius}}),
+    )
 }
 pub fn snapshot() -> Value {
     let result = (|| {
@@ -81,9 +116,9 @@ pub fn snapshot() -> Value {
         result
     })();
     match result {
-        Ok(monitors) => json!({"available":true,"monitors":monitors}),
+        Ok(desktop) => desktop,
         Err(_) => {
-            json!({"available":false,"monitors":{},"error":"Workspace tracking unavailable; workspace-pinned widgets are hidden"})
+            json!({"available":false,"monitors":{},"grids":{},"error":"Desktop geometry unavailable; widgets retain their positions and wait for the compositor"})
         }
     }
 }
@@ -104,6 +139,24 @@ mod tests {
         }
     }
     #[test]
+    fn desktop_projection_supports_legacy_and_current_hyprland() {
+        for current in [false, true] {
+            let result=project(|command| Ok(match command {
+                "j/monitors" => json!([{"name":"DP-1","width":1920,"height":1080,"scale":1.0,"transform":0,"reserved":[0,32,0,0],"activeWorkspace":if current {json!({"address":"2","type":"numbered"})} else {json!({"id":2})}}]),
+                "j/getoption general:gaps_in" => if current {json!({"css":"5 5 5 5"})} else {json!({"custom":"5 5 5 5"})},
+                "j/getoption general:gaps_out" => json!({"custom":"10 20 30 40"}),
+                "j/getoption general:border_size" => json!({"int":2}),
+                "j/getoption decoration:rounding" => json!({"int":0}),
+                _ => panic!("Unexpected compositor command")
+            })).unwrap();
+            assert_eq!(result["monitors"]["DP-1"], 2);
+            assert_eq!(result["grids"]["DP-1"]["x"], 40.0);
+            assert_eq!(result["grids"]["DP-1"]["gapX"], 10.0);
+            assert_eq!(result["frame"]["radius"], 0.0);
+        }
+        assert!(project(|_| Ok(json!({}))).is_err());
+    }
+    #[test]
     fn socket_round_trip() {
         use std::os::unix::net::UnixListener;
         let path = env::temp_dir().join(format!("widget-workspace-{}.sock", std::process::id()));
@@ -117,7 +170,10 @@ mod tests {
                 .write_all(br#"[{"name":"DP-1","activeWorkspace":{"id":2}}]"#)
                 .unwrap();
         });
-        assert_eq!(query(&path).unwrap(), json!({"DP-1":2}));
+        assert_eq!(
+            request(&path, b"j/monitors").unwrap(),
+            json!([{"name":"DP-1","activeWorkspace":{"id":2}}])
+        );
         worker.join().unwrap();
         fs::remove_file(&path).unwrap();
         assert!(query(&path).is_err());

@@ -6,8 +6,6 @@ The optional `widgets.json` alongside it is a **Core-owned extension**, not an o
 
 ```json
 {
-  "radius": 18,
-  "borderWidth": 0,
   "borderAlpha": 0.08,
   "backgroundAlpha": 1,
   "padding": 12,
@@ -17,10 +15,10 @@ The optional `widgets.json` alongside it is a **Core-owned extension**, not an o
 }
 ```
 
-Core bounds radius 0–40, border width 0–3, border alpha 0–1, background alpha 0.6–1, padding 8–24 and scale 0.75–2. Theme scale applies to the host; per-instance appearance can override frame tokens but cannot select arbitrary dimensions. The font must exist on the machine; Qt supplies a fallback otherwise.
+Core inherits border size and rounding from resolved global Hyprland settings, overriding legacy radius/borderWidth appearance tokens. Border alpha is bounded 0–1, background alpha 0.6–1, padding 8–24 and scale 0.75–2. Theme scale affects content typography and padding, not cell sizes or desktop gaps. Per-instance appearance can override other frame tokens but cannot select arbitrary dimensions. The font must exist on the machine; Qt supplies a fallback otherwise.
 
-The idle frame has a soft edge and no title by default. Arrange exposes controls inside the same outer dimensions. GPU rendering masks the whole surface to its rounded outline. Software rendering uses the rounded background with content inset far enough to remain inside the corners; it does not depend on unsupported shader effects. Core owns content padding; widget authors should avoid painting a second card background.
+The idle frame follows desktop rounding/borders and has no title by default. Arrange exposes controls inside the same outer dimensions. GPU rendering masks the whole surface to its rounded outline. Software rendering uses the rounded background with content inset far enough to remain inside the corners; it does not depend on unsupported shader effects. Core owns content padding; widget authors should avoid painting a second card background.
 
-Changes inside the mounted theme directory refresh within about one second. Replacing the theme directory or switching its symlink requires `omarchy-widget restart`, because the sandbox deliberately binds only the selected theme. These are data refreshes, not shell restarts. Geometry, controls and fonts are Core's own components; this release does not implement the shell's entire `shell.toml` styling vocabulary.
+Trusted Core supplies theme values through broker snapshots; theme switches and ricing changes refresh within about one second without remounting the sandbox. Geometry, controls and fonts are Core's own components; this release does not implement the shell's entire `shell.toml` styling vocabulary.
 
 Store theme sources in the theme repository. The active directory is generated/staged by Omarchy; verify how a custom `widgets.json` is carried into that directory on the installed Omarchy revision. Missing files are optional and use defaults.

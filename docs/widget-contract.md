@@ -20,7 +20,7 @@ The root QML item declares `required property var widgetContext`. Core passes it
 - `active`: whether the host considers the widget visible. Suspend background work when false.
 - `theme`: Core-owned foreground, background, accent, muted and urgent colors.
 - `metrics`: Core-owned font and spacing helpers.
-- `appearance`: theme widget tokens with optional per-instance overrides.
+- `appearance`: theme widget tokens with optional per-instance overrides; effective desktop border size and rounding take precedence.
 - `requestConfigure()`: opens Core's settings surface when an editor is declared.
 
 Legacy API 1 additionally uses `sizeName`, `requestInput(bool)`, `saveSettings(object)`, `saving`, `saved`, and `saveError`. `saveSettings` returning true means queued, not durably saved. Observe completion state. No concurrent save for the same instance is accepted. The compatibility `qs.Commons` and `qs.Ui` modules belong to Core; they are not the shell's singletons and do not promise the full Quattro plugin API.
@@ -49,4 +49,8 @@ Widget QML and its settings editor run in a per-package Bubblewrap island, outsi
 
 Placement has an optional `workspace` field: absent/null means all workspaces; integers 1–9999 select a numbered workspace on the instance's configured monitor. `workspace INSTANCE_ID all|NUMBER` changes this field without changing the widget's settings revision. Existing `place` calls preserve it and `duplicate` copies it.
 
-Snapshots include `desktop: {available, monitors, error?}`. `monitors` maps output names to active numbered workspace IDs, with no titles or window information. The host applies workspace matching before enabling the widget Loader; `widgetContext.active` follows visibility. An unavailable snapshot hides assigned instances. The broker permits workspace assignment only for an instance owned by its package. Existing API 2 contexts and manifest fields remain unchanged.
+Snapshots include `desktop: {available, monitors, error?}`. `monitors` maps output names to active numbered workspace IDs, with no titles or window information. The host applies workspace matching before enabling the widget Loader; `widgetContext.active` follows visibility. An unavailable desktop snapshot leaves all widgets unplaced. The broker permits workspace assignment only for an instance owned by its package. Existing API 2 contexts and manifest fields remain unchanged.
+
+## Cell placement extension
+
+See [grid-layout.md](grid-layout.md) for complete geometry, migration and fallback rules. `place INSTANCE_ID JSON` now requires `{column,row,monitor,size}` with nonnegative integer cell coordinates and a supported family. Writes validate current occupancy under the registry lock. The stored `placement.cell` and `placement.monitor` are preferences; per-entry `effective` is the resolved logical rectangle or null when unplaced. Snapshot `desktop.grids` supplies cell dimensions and usable bounds, `desktop.frame` supplies border/rounding, and `occupancy` supplies anonymous rectangles for preview. An entry's `occupancyIndex` identifies its own rectangle. Renderers do not receive other packages' identities or settings through occupancy.

@@ -2,7 +2,7 @@
 
 <img src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-app.svg" alt="Omarchy App" height="20">
 
-A shared native desktop-widget host for Omarchy: fixed widget families, a snap grid, settings, and package management. Each widget lives in its own repository. Core runs each active package in its **own sandboxed Quickshell process**, with a trusted manager and state broker supervised by a user service. An optional compatibility plugin forwards old shell commands; it loads no widget code.
+A shared native desktop-widget host for Omarchy: fixed widget families, a cell occupancy grid, settings, and package management. Each widget lives in its own repository. Core runs each active package in its **own sandboxed Quickshell process**, with a trusted manager and state broker supervised by a user service. An optional compatibility plugin forwards old shell commands; it loads no widget code.
 
 **v0.0.2 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. No installed Omarchy version has been verified for this new runtime on a live desktop yet. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
 
@@ -48,16 +48,16 @@ This is a development fixture, not a new product widget.
 | Family | Grid cells | Logical dimensions |
 |---|---|---|
 | Small | 1 × 1 | 192 × 192 |
-| Medium | 2 × 1 | 400 × 192 |
-| Large | 2 × 2 | 400 × 400 |
+| Medium | 2 × 1 | (384 + gapX) × 192 |
+| Large | 2 × 2 | (384 + gapX) × (384 + gapY) |
 
-The gap and snap increment are 16 logical pixels. Core applies theme scaling. Arrange shows grid dots; drag or use arrow keys to move, and cycle only the sizes the widget supports. Free resizing is intentionally absent. Overlap is currently allowed; snapping does not automatically pack or push other widgets.
+Core inherits global desktop gaps. Arrange shows cell outlines; drag or use arrow keys to move one cell, and cycle only the sizes the widget supports. Explicit moves and resizes reject collisions without pushing other widgets. Theme scale affects content rather than the cell grid.
 
 API 1 packages remain loadable through a compatibility facade, but their arbitrary dimensions become fixed families: compact → small, standard → medium, wide → large. Existing World Clock layouts may need Large until its individual repository adopts the new family and settings-editor contract. Its local persistence debugging work has not been overwritten.
 
 ## State and recovery
 
-Core uses `$XDG_DATA_HOME/omarchy/widgets` and `$XDG_STATE_HOME/omarchy/widgets`, with standard home-directory defaults. The first write migrates layout version 1 and saves `layout-v1.backup.json`. Cities, appearance and enabled state are preserved. Monitor positions are clamped for display; new placement writes snap to the grid.
+Core uses `$XDG_DATA_HOME/omarchy/widgets` and `$XDG_STATE_HOME/omarchy/widgets`, with standard home-directory defaults. The first write migrates layout version 1 and saves `layout-v1.backup.json`. Cities, appearance and enabled state are preserved. Pixel-only positions migrate once to preferred monitor/cell coordinates when desktop geometry is available; temporary display fallbacks do not overwrite them.
 
 Settings saves complete only after the helper commits state. A revision conflict retains the editor draft and reports an error. The writer uses a kernel file lock released on process exit, atomic replacement and filesystem sync. Package versions remain on disk for rollback; abandoned versions are not automatically garbage-collected in this release.
 
@@ -97,7 +97,7 @@ omarchy-widget workspace io.github.tcballard.worldclock all
 
 The widget remains on its configured monitor and appears only while that monitor's active numbered workspace matches. It does not follow a workspace to a different monitor. Special workspace overlays leave the underlying numbered-workspace assignment unchanged. Duplicate instances inherit their initial assignment and can then be configured independently. Settings revisions and clock settings are unaffected.
 
-Trusted Core queries Hyprland's local monitor IPC and supplies only monitor names and active workspace IDs through snapshots. The raw compositor socket is still absent from widget sandboxes. Visibility follows the normal approximately one-second refresh, with a short shared query cache. When tracking is unavailable, pinned instances hide and the manager reports the problem; all-workspace instances remain available. This is cooperative presentation, not a new security restriction on hostile Wayland clients.
+Trusted Core queries Hyprland's local monitor IPC and supplies bounded monitor/workspace data, cell geometry and frame metrics through snapshots. The raw compositor socket is still absent from widget sandboxes. Visibility follows the normal approximately one-second refresh, with a short shared query cache. When desktop geometry is unavailable, all instances remain unplaced and the manager reports the problem. This is cooperative presentation, not a new security restriction on hostile Wayland clients.
 
 This development branch remains **v0.0.2**. Real Hyprland shortcut activation, monitor hotplug and workspace switching need XPS acceptance. The network-widget direction is documented in [network-widgets.md](docs/network-widgets.md); network access is not enabled by this change.
 
@@ -106,3 +106,9 @@ To remove the launcher entry, delete `io.github.tcballard.widget-core.desktop` f
 ## Building a widget
 
 Follow the [widget authoring standard](docs/widget-authoring.md) alongside the API contract. It separates enforced package/runtime rules from the design, accessibility, lifecycle and verification conventions expected at review.
+
+## Cell layout and inherited ricing (development)
+
+Small, Medium and Large occupy 1×1, 2×1 and 2×2 cells. Core inherits global Hyprland gaps, border size and rounding; disabled widgets release their cells. Arrange mode previews footprints and rejects occupied drops. Different numbered workspaces can reuse cells; an all-workspace instance reserves them everywhere.
+
+Preferred monitor/cell coordinates survive monitor removal and resolution/gap changes. Core temporarily finds another available slot or marks the instance unplaced, then restores the preference when available. See [layout/API details](docs/grid-layout.md) and [verification](docs/grid-verification.md). Core remains v0.0.2; real desktop acceptance is pending.
