@@ -681,8 +681,11 @@ fn run(args: &[String]) -> Result<Value> {
         let r = Registry::from_env()?;
         let _lock = r.lock()?;
         let mut layout = r.layout()?;
-        if !layout["placements"][&args[1]].is_object() { return Err("Add the widget before editing it".into()); }
-        layout["runtime"]["edit"] = json!({"instance":args[1],"serial":layout["revision"].as_u64().unwrap_or(0)+1});
+        if !layout["placements"][&args[1]].is_object() {
+            return Err("Add the widget before editing it".into());
+        }
+        layout["runtime"]["edit"] =
+            json!({"instance":args[1],"serial":layout["revision"].as_u64().unwrap_or(0)+1});
         r.commit(&mut layout)?;
         return Ok(json!(true));
     }
