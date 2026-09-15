@@ -3,7 +3,7 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 core_id=io.github.tcballard.widget-core
 destination="$HOME/.config/omarchy/plugins/$core_id"
-for command_name in cargo omarchy omarchy-shell jq; do
+for command_name in cargo omarchy omarchy-shell jq qs systemctl; do
   command -v "$command_name" >/dev/null || { echo "Missing command: $command_name" >&2; exit 1; }
 done
 [[ $# -eq 0 || ( $# -eq 1 && "$1" == --update ) ]] || { echo 'Usage: bash install-local [--update]' >&2; exit 1; }
@@ -11,30 +11,77 @@ done
 if [[ -e "$destination" && "${1:-}" != --update ]]; then
   echo 'Core already installed. Use bash install-local --update.' >&2; exit 1
 fi
+# The 0.1.x → 0.0.2 reset is intentional; compare contracts, not version order.
 cargo build --manifest-path "$root/Cargo.toml" --locked --release
 omarchy plugin validate "$root"
-mkdir -p -- "$(dirname -- "$destination")"
+"$root/target/release/omarchy-widget" list >/dev/null
+mkdir -p -- "$(dirname -- "$destination")" "$HOME/.local/bin"
 stage=$(mktemp -d "$(dirname -- "$destination")/.widget-core.XXXXXXXX")
-trap 'rm -rf -- "$stage"' EXIT
-cp -- "$root/manifest.json" "$root/Service.qml" "$root/LICENSE" "$stage/"
-cp -R -- "$root/qml" "$stage/"
+backup=""
+activated=false
+cleanup() {
+  result=$?
+  rm -rf -- "$stage"
+  if (( result != 0 )) && [[ "$activated" == true ]]; then
+    omarchy plugin disable "$core_id" >/dev/null 2>&1 || true
+    failed=$(mktemp -d "$(dirname -- "$destination")/.widget-core-failed.XXXXXXXX")
+    mv -- "$destination" "$failed/core" || true
+    if [[ -n "$backup" && -d "$backup/core" ]]; then
+      mv -- "$backup/core" "$destination"
+      omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+      omarchy plugin enable "$core_id" >/dev/null 2>&1 || true
+    fi
+    echo "Core activation failed; previous installation restored. Failed copy: $failed/core" >&2
+  fi
+}
+trap cleanup EXIT
+cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/host-launch" "$root/LICENSE" "$stage/"
+cp -R -- "$root/qml" "$root/Commons" "$root/Ui" "$stage/"
 mkdir "$stage/bin"
 install -m755 "$root/target/release/omarchy-widget" "$stage/bin/omarchy-widget"
 if [[ -d "$destination" ]]; then
+  systemctl --user stop omarchy-widget-host.service 2>/dev/null || true
   omarchy plugin disable "$core_id"
-  backup=$(mktemp -d "$HOME/.local/state/widget-core-backup.XXXXXXXX")
+  backup=$(mktemp -d "$(dirname -- "$destination")/.widget-core-backup.XXXXXXXX")
   mv -- "$destination" "$backup/core"
   echo "Previous Core saved at $backup/core"
 fi
+activated=true
 mv -T -- "$stage" "$destination"
 omarchy-shell shell rescanPlugins
 for ((attempt=0;attempt<40;attempt++)); do
   if omarchy plugin list --json | jq -e --arg id "$core_id" 'any(.[]; .id==$id)' >/dev/null; then
     omarchy plugin enable "$core_id"
-    echo "Core installed. Open manager: omarchy-shell $core_id manage"
+    install -m755 "$root/widget" "$HOME/.local/bin/omarchy-widget"
+    mkdir -p "$HOME/.config/systemd/user"
+    cat > "$HOME/.config/systemd/user/omarchy-widget-host.service" <<'UNIT'
+[Unit]
+Description=Omarchy desktop widget host
+PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bash "%h/.config/omarchy/plugins/io.github.tcballard.widget-core/host-launch"
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+KillMode=control-group
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=graphical-session.target
+UNIT
+    systemctl --user daemon-reload
+    systemctl --user enable omarchy-widget-host.service
+    bash "$destination/widget" start
+    echo 'Core v0.0.2 installed with a separate widget host. Restart the shell once to replace the old in-process service: omarchy restart shell'
+    echo 'After migration, only widgets need restarting: omarchy-widget restart'
+    echo "Open manager: omarchy-shell $core_id manage"
     exit 0
   fi
   sleep 0.1
 done
-echo "Core copied, but discovery was not confirmed. Inspect Omarchy shell logs." >&2
+echo 'Core discovery failed.' >&2
 exit 1
