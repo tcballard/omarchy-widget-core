@@ -16,6 +16,7 @@ cargo build --manifest-path "$root/Cargo.toml" --locked --release
 bash "$root/build-wayland-filter"
 omarchy plugin validate "$root"
 "$root/target/release/omarchy-widget" list >/dev/null
+"$root/target/release/omarchy-widget" resource-preflight >/dev/null
 mkdir -p "$root/bin"
 install -m755 "$root/target/release/omarchy-widget" "$root/bin/omarchy-widget"
 bash "$root/sandbox-launch" check
