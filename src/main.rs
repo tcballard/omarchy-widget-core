@@ -223,6 +223,22 @@ impl Registry {
         let layout = self.layout()?;
         let mut widgets = Vec::new();
         let mut problems = Vec::new();
+        let theme_file = self
+            .state
+            .parent()
+            .unwrap()
+            .join("current/theme/widgets.json");
+        let appearance = if theme_file.exists() {
+            match read_json(&theme_file, 8192) {
+                Ok(v) if v.is_object() => v,
+                _ => {
+                    problems.push("Invalid theme widgets.json; using defaults".to_string());
+                    json!({})
+                }
+            }
+        } else {
+            json!({})
+        };
         let packages = self.data.join("packages");
         if packages.exists() {
             for entry in fs::read_dir(packages).map_err(err)?.take(MAX_PACKAGES + 1) {
@@ -253,7 +269,7 @@ impl Registry {
             }
         }
         widgets.sort_by_key(|w| w["manifest"]["id"].as_str().unwrap_or("").to_string());
-        Ok(json!({"api":1,"installed":widgets,"problems":problems}))
+        Ok(json!({"api":1,"installed":widgets,"problems":problems,"appearance":appearance}))
     }
     fn install(&self, source: &Path) -> Result<Value> {
         let _lock = self.lock()?;
