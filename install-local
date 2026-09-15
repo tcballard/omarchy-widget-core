@@ -57,8 +57,8 @@ cp -R -- "$root/qml" "$root/Commons" "$root/Ui" "$stage/"
 mkdir "$stage/bin"
 install -m755 "$root/wayland-policy" "$stage/wayland-policy"
 install -m755 "$root/target/wl-mitm-source/target/release/wl-mitm" "$stage/bin/wl-mitm"
-cp -R "$root/target/wl-mitm-source" "$stage/wl-mitm-source"
-rm -rf "$stage/wl-mitm-source/target" "$stage/wl-mitm-source/.git"
+mkdir "$stage/wl-mitm-source"
+tar -C "$root/target/wl-mitm-source" --exclude=./target --exclude=./.git -cf - . | tar -C "$stage/wl-mitm-source" -xf -
 install -m755 "$root/target/release/omarchy-widget" "$stage/bin/omarchy-widget"
 if [[ -d "$destination" ]]; then
   systemctl --user stop omarchy-widget-host.service 2>/dev/null || true
