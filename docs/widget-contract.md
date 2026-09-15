@@ -1,5 +1,14 @@
 # Widget contract: experimental API 1
 
+## Additive context members in Core 0.1.1
+
+`appearance` contains merged theme and per-widget appearance settings. See
+[widget-appearance.md](widget-appearance.md). `requestInput(bool)` opts the
+card into on-demand keyboard focus while an editor is open; call false on
+close. `saving` reports registry activity, and `saveError` reports the last
+Core error. These members do not exist in Core 0.1.0; widgets needing them
+must guard access and document their minimum Core version.
+
 A widget repository contains `widget.json`, a QML content entry point and any relative assets it needs. It does not contain a Quattro plugin manifest or start another Quickshell instance. Core is installed once, independently.
 
 ## Manifest
