@@ -406,14 +406,24 @@ impl Registry {
         let _lock = self.lock()?;
         let mut l = self.layout()?;
         let mut runtime = l["runtime"].clone();
-        if !runtime.is_object() { runtime = json!({"shown":true,"editing":false,"managerOpen":false}); }
+        if !runtime.is_object() {
+            runtime = json!({"shown":true,"editing":false,"managerOpen":false});
+        }
         match method {
-            "manage" => runtime["managerOpen"] = json!(!runtime["managerOpen"].as_bool().unwrap_or(false)),
+            "manage" => {
+                runtime["managerOpen"] = json!(!runtime["managerOpen"].as_bool().unwrap_or(false))
+            }
             "close-manager" => runtime["managerOpen"] = json!(false),
-            "arrange" => { runtime["editing"] = json!(!runtime["editing"].as_bool().unwrap_or(false)); runtime["shown"] = json!(true); },
+            "arrange" => {
+                runtime["editing"] = json!(!runtime["editing"].as_bool().unwrap_or(false));
+                runtime["shown"] = json!(true);
+            }
             "finish-arrange" => runtime["editing"] = json!(false),
             "show" => runtime["shown"] = json!(true),
-            "hide-all" => { runtime["shown"] = json!(false); runtime["editing"] = json!(false); },
+            "hide-all" => {
+                runtime["shown"] = json!(false);
+                runtime["editing"] = json!(false);
+            }
             "refresh" => (),
             _ => return Err("Unknown host control".into()),
         }
@@ -1006,7 +1016,10 @@ mod tests {
     #[test]
     fn host_control_survives_reopen_without_session_ipc() {
         let t = Temp::new();
-        let r = Registry { data:t.0.join("data"), state:t.0.join("state") };
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
         r.control("manage").unwrap();
         assert_eq!(r.snapshot().unwrap()["runtime"]["managerOpen"], true);
         r.control("close-manager").unwrap();
@@ -1020,5 +1033,4 @@ mod tests {
         assert!(r.control("exec").is_err());
         assert_eq!(r.layout().unwrap(), before);
     }
-
 }
