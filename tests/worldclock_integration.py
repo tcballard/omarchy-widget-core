@@ -95,6 +95,7 @@ import "''' + (root / 'qml').as_uri() + '''" as Core
 Window {
     width:520; height:560; visible:true
 ''' + controller + context + panel + '''
+    function action(id,text,revision) { return save(id,JSON.parse(text),revision,true); }
     function loadSnapshot(text) { installed=JSON.parse(text).installed; return true; }
     function openEditor(id) { configure(id); return configuring; }
     function draft() { return JSON.stringify(settingsContext.draftSettings); }
@@ -177,7 +178,10 @@ Window {
     editor = open_editor(second)
     QMetaObject.invokeMethod(editor, 'add', Q_ARG('QVariant', 'Asia/Kathmandu'))
     concurrent = dict(original[second]['settings'], displayMode='analogue')
-    cli('save', second, json.dumps({'revision': original[second]['revision'], 'settings': concurrent}))
+    assert call(controller,'action',second,json.dumps(concurrent),original[second]['revision'])
+    spin(lambda: not call(controller,'pending'),'Display action did not settle')
+    assert call(controller,'current')==second, 'Action acknowledgement closed the settings draft'
+    assert draft()['cities'][-1]['zone']=='Asia/Kathmandu', 'Action destroyed the draft'
     assert call(controller, 'openEditor', first) == second
     button('save-button')
     spin(lambda: 'changed elsewhere' in panel.property('error'), 'Stale Save was not rejected')

@@ -21,6 +21,7 @@ Item {
     property var desktop: ({available:false,monitors:{}})
     property var themeAppearance: ({})
     property string error: ""
+    property string notice: ""
     readonly property bool revealRunner: Quickshell.env("OMARCHY_WIDGET_REVEAL") === "1"
     property bool revealing: false
     property bool shown: true
@@ -44,10 +45,10 @@ Item {
     }
     function refresh() { return execute(["list"]); }
     function control(method) { return execute(["control",method]); }
-    function save(id, value, revision) {
+    function save(id, value, revision, action) {
         if (saveStates[id] && saveStates[id].saving) return false;
         if(configuring===id) editorError="";
-        var token={instance:id,generation:configuring===id?settingsGeneration:-1};
+        var token={instance:id,generation:!action && configuring===id?settingsGeneration:-1};
         if (!execute(["save",id,JSON.stringify({revision:revision,settings:value})],token)) {
             if(configuring===id) editorError=error;
             return false;
@@ -94,13 +95,14 @@ Item {
                 root.weatherStates=weather; return;
             }
             root.error=message;
+            if(success && request.args[0]==="export-settings") root.notice=response.message;
             if(request.token) {
                 var id=request.token.instance;
                 var states=Object.assign({},root.saveStates);
                 states[id]={saving:false,error:message,saved:success}; root.saveStates=states;
                 if(success && root.configuring===id && root.settingsGeneration===request.token.generation) root.closeSettings();
             }
-            if(request.args[0]==="place" || request.args[0]==="workspace") {
+            if(request.args[0]==="place" || request.args[0]==="workspace" || request.args[0]==="recover-placement") {
                 var placementErrors=Object.assign({},root.placementErrors);
                 placementErrors[request.args[1]]=message; root.placementErrors=placementErrors;
             }
@@ -180,6 +182,10 @@ Item {
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
         Core.Manager {
+            monitors: Object.keys(root.desktop.grids || {})
+            notice: root.notice
+            onRecoverRequested: function(id,size,monitor) { root.execute(["recover-placement",id,JSON.stringify({size:size,monitor:monitor})]); }
+            onExportRequested: function(id) { root.execute(["export-settings",id]); }
             anchors.fill: parent
             entries: root.installed
             catalog: root.catalog
@@ -309,7 +315,7 @@ Item {
                 }
                 readonly property var theme: Color
                 readonly property var metrics: Style
-                readonly property int api: 2
+                readonly property int api: 3
                 readonly property string instanceId: window.modelData
                 readonly property string packageId: window.metadata.id
                 readonly property string definitionId: "main"
@@ -325,7 +331,8 @@ Item {
                 property bool inputRequested: false
                 function requestInput(enabled) { inputRequested = enabled; if(enabled) draftRevision=settingsRevision; }
                 function requestConfigure() { root.configure(window.modelData); }
-                function saveSettings(value) { return root.save(window.modelData,value,draftRevision); }
+                // API 3 actions use the revision observed when the action was prepared.
+                function saveSettings(value, revision) { return root.save(window.modelData,value,revision === undefined ? (window.metadata.coreApi===1 ? draftRevision : settingsRevision) : revision, true); }
                 onSettingsRevisionChanged: if(!inputRequested || saved) draftRevision=settingsRevision
             }
             Core.WidgetFrame {
@@ -339,7 +346,7 @@ Item {
                 moveStepY: window.grid ? window.grid.cell+window.grid.gapY : 192
                 invalidTarget: window.moving && !window.validTarget
                 notice: (window.moving && !window.validTarget ? "Those cells are unavailable" : "") || root.placementErrors[window.modelData] || context.saveError || (context.saving ? "Saving…" : "")
-                configurable: !!window.metadata.settingsEntryPoint
+                configurable: window.metadata.coreApi>=3 && !!window.metadata.settingsEntryPoint
                 onConfigureRequested: root.configure(window.modelData)
                 onEditRequested: root.control("arrange")
                 onEscapeRequested: root.control("finish-arrange")
@@ -354,6 +361,7 @@ Item {
                 onMonitorRequested: { var screens=Quickshell.screens; if(screens.length) window.place(window.sizeName,screens[(screens.indexOf(window.screen)+1)%screens.length].name); }
                 Loader {
                     id: content
+                    onStatusChanged: if(status===Loader.Error) root.execute(["content-failed",window.modelData]);
                     anchors.fill: parent
                     active: true
                     readonly property string entryUrl: window.entry ? "file://" + window.entry.directory.split("/").map(encodeURIComponent).join("/") + "/" + window.metadata.entryPoint.split("/").map(encodeURIComponent).join("/") : ""

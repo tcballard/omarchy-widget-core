@@ -13,7 +13,7 @@ with tempfile.TemporaryDirectory() as tmp:
     call('new',package,id,'Author example');original=(package/'View.qml').read_text()
     call('new',package,id,'Do not overwrite',ok=False);assert (package/'View.qml').read_text()==original
     call('validate',package)
-    subprocess.run([sys.executable,str(root/'sdk/render_previews.py'),str(package/'previews')],check=True)
+    subprocess.run([sys.executable,str(root/'sdk/render_previews.py'),str(package/'previews'),'--package',str(package)],check=True)
     m=json.loads((package/'widget.json').read_text());m['previews']={k:'previews/'+k+'.png' for k in ['small','medium','large']};(package/'widget.json').write_text(json.dumps(m))
     call('validate',package);call('install',package)
     a=call('create',id,'small')['updated'];b=call('create',id,'large')['updated'];assert a!=b

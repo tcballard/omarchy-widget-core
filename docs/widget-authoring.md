@@ -1,6 +1,6 @@
 # Widget authoring standard
 
-Applies to new API 2 widgets targeting experimental Core v0.0.2. The [API contract](widget-contract.md) defines the concrete fields and commands. This document distinguishes platform enforcement from review expectations; it is not a claim of automated certification.
+Applies to new API 3 widgets targeting experimental Core v0.0.2. The [API contract](widget-contract.md) defines the concrete fields and commands. This document distinguishes platform enforcement from review expectations; it is not a claim of automated certification.
 
 ## Enforced platform rules
 

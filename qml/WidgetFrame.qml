@@ -61,7 +61,7 @@ FocusScope {
     ColumnLayout {
         anchors.fill:parent;spacing:0
         Item {
-            visible:root.editing || root.appearance.showTitle === true
+            visible:root.editing || root.configurable || root.appearance.showTitle === true
             Layout.fillWidth:true;Layout.preferredHeight:visible?Style.space(42):0
             MouseArea {
                 id: drag;anchors.fill:parent;enabled:root.editing
@@ -74,8 +74,9 @@ FocusScope {
             }
             RowLayout {
                 anchors.fill:parent;anchors.leftMargin:Style.space(14);anchors.rightMargin:Style.space(7);spacing:Style.space(5)
-                Label { text:root.editing?"⠿  "+root.title:root.title;font.family:root.labelFamily;Layout.fillWidth:true }
-                Ui.Button { objectName:"edit-button";text:root.editing?"Done":"Arrange";fontSize:Style.font.bodySmall;focusable:true;onClicked:root.editRequested() }
+                Label { text:root.editing?"⠿  "+root.title:root.appearance.showTitle === true ? root.title : "";font.family:root.labelFamily;Layout.fillWidth:true }
+                Ui.Button { objectName:"settings-gear"; text:"⚙"; visible:root.configurable; focusable:true; Accessible.name:root.title+" settings"; onClicked:root.configureRequested() }
+                Ui.Button { visible:root.editing || root.appearance.showTitle === true; objectName:"edit-button";text:root.editing?"Done":"Arrange";fontSize:Style.font.bodySmall;focusable:true;onClicked:root.editRequested() }
             }
         }
         Rectangle { visible:root.editing;Layout.fillWidth:true;Layout.preferredHeight:visible?1:0;color:Color.foreground;opacity:0.1 }

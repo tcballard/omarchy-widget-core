@@ -1,13 +1,23 @@
 {
   "schemaVersion": 2,
   "kind": "desktop-widget",
-  "coreApi": 2,
+  "coreApi": 3,
   "id": "io.github.tcballard.core-example-notes",
-  "name": "Notes · Core example",
+  "name": "Notes \u00b7 Core example",
   "version": "0.0.2",
   "entryPoint": "View.qml",
   "settingsEntryPoint": "Settings.qml",
-  "families": ["small", "medium", "large"],
+  "families": [
+    "small",
+    "medium",
+    "large"
+  ],
   "defaultFamily": "small",
-  "defaults": {"note": "Click to edit this note."}
+  "defaults": {
+    "note": "Click to edit this note."
+  },
+  "requires": [
+    "acknowledged-actions",
+    "frame-settings"
+  ]
 }

@@ -9,6 +9,7 @@ with tempfile.TemporaryDirectory(prefix='widget-island-') as temp:
     for name in ['Host.qml','shell.qml','bin/omarchy-widget']:(config/name).write_text('fixture')
     for name in ['qml','Commons','Ui']:(config/name).mkdir()
     package=base/'package';package.mkdir();(package/'code').write_text('immutable')
+    shutil.copy('/usr/bin/true',package/'helper');(package/'helper').chmod(0o700)
     home=base/'home';home.mkdir();(home/'secret').write_text('secret')
     runtime=base/'runtime';runtime.mkdir()
     sockets=[]
@@ -37,7 +38,8 @@ with tempfile.TemporaryDirectory(prefix='widget-island-') as temp:
     if '--live' not in sys.argv:sys.exit(0)
     tcp=socket.socket();tcp.bind(('127.0.0.1',0));tcp.listen()
     probe=config/'qml/probe.py'
-    probe.write_text('''import os,pathlib,socket
+    probe.write_text('''import os,pathlib,socket,subprocess
+subprocess.run(['/widget/helper'],check=True)
 assert 'SSH_AUTH_SOCK' not in os.environ and 'SANDBOX_SECRET' not in os.environ
 for path in '''+repr([str(home),str(runtime/'raw'),str(runtime/'agent'),'/run/dbus/system_bus_socket','/sys'])+''':
     assert not pathlib.Path(path).exists(), path
