@@ -10,7 +10,7 @@ Not run in the remote development environment. Record `omarchy-version`, Quicksh
 6. Switch between a light Windows Familiar theme and a dark theme while widgets remain open. Check text contrast, radius, rounded clipping, default padding and a `widgets.json` override. Verify changes to the selected theme refresh through broker snapshots within about one second and malformed theme data uses defaults.
 7. Update a widget while its settings editor is open. Confirm code reload and error behaviour; do not silently discard a dirty editor as an acceptable result. Test valid rollback, invalid package rejection, interrupted install and full-disk failures.
 8. Verify login/autostart, duplicate-start refusal, stop/start/restart/status/log commands, installer activation failure recovery and preservation of data when the runtime is disabled.
-9. Confirm widgets remain behind fullscreen windows and explicit hiding suspends widget content. Automatic fullscreen detection is not available without the blocked Hyprland command socket. Measure idle CPU/wakeups with multiple widgets.
+9. Confirm widgets remain behind fullscreen windows and explicit hiding suspends widget content. Automatic fullscreen detection is not implemented; runners still have no Hyprland command socket. Measure idle CPU/wakeups with multiple widgets.
 
 Any failure in installation, persistence, process separation or settings acknowledgement blocks calling this release ready for normal use. Run `omarchy-widget sandbox-check` before graphical checks. Verify networking is unavailable and the application renders with Qt software rendering. Portable tests cover package-scoped broker authority and actual Wayland proxy enforcement; this checklist covers their integration with the real desktop.
 
@@ -20,3 +20,19 @@ Any failure in installation, persistence, process separation or settings acknowl
 
 13. Inspect each `omarchy-widget-island-*.service`: `MemoryMax=268435456`, `MemorySwapMax=0`, `CPUQuotaPerSecUSec=250ms`, `TasksMax=64`, `OOMPolicy=kill`. Confirm its cgroup is a sibling of Core and includes both proxy and widget descendants. Measure normal startup, idle and edit usage for World Clock before treating these default budgets as tuned.
 14. Confirm a package exhausting memory stops only that package, observes the bounded retry policy, and leaves the manager and another package usable. CPU pressure should throttle; task pressure should reject new tasks. These destructive workload fixtures run in disposable CI; do not deliberately exhaust your normal desktop to repeat them. Verify normal Core stop/restart cleans up all transient services on the XPS.
+
+15. Invoke reveal separately from the manager. Check Escape, timeout, fullscreen,
+    focus return, multi-output stacking and no application position changes.
+    Lock during reveal; verify no widget content/input appears on the lock screen.
+    Confirm elevated surfaces disappear when the lease ends, including a faulty
+    client that refuses to demote. Record the compositor version and result.
+16. Install `examples/weather`, grant its installed version permission, add two
+    instances at the same coordinates and observe shared refresh. Revoke, update,
+    disconnect networking, change workspace and resume. Confirm loading, stale
+    last-known data, permission errors and bounded retries without raw renderer
+    network access. This is the outstanding live provider test.
+17. Create a widget using the SDK. Add two instances with different settings;
+    update with a migration, roll back before edits, then verify rollback refuses
+    to overwrite a later incompatible edit. Kill/restart only its package and
+    verify the manager and another package remain usable. Finish settings before
+    update; confirm an open editor blocks code replacement.

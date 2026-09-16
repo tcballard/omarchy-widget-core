@@ -2,6 +2,7 @@ mod grid;
 mod island;
 mod resources;
 mod reveal;
+mod sdk;
 mod settings;
 mod weather;
 mod workspaces;
@@ -188,6 +189,7 @@ fn manifest(dir: &Path) -> Result<Value> {
         }
     }
     settings::contract(&v)?;
+    sdk::dependencies(&v)?;
     Ok(v)
 }
 fn walk(dir: &Path, relative: &Path, out: &mut Vec<PathBuf>, bytes: &mut u64) -> Result<()> {
@@ -461,6 +463,54 @@ impl Registry {
         }
         palette
     }
+    fn request_edit(&self, id: &str) -> Result<Value> {
+        let _lock = self.lock()?;
+        let mut l = self.layout()?;
+        if !l["placements"][id].is_object() {
+            return Err("Add the widget before editing it".into());
+        }
+        let package = l["placements"][id]["packageId"].as_str().unwrap();
+        if l["runtime"]["packageControls"][package]["disabled"] == true {
+            return Err("Enable this package before opening settings".into());
+        }
+        if reveal::active(
+            l["runtime"]["revealUntil"].as_u64().unwrap_or(0),
+            reveal::now(),
+        ) {
+            return Err("Dismiss reveal before opening settings".into());
+        }
+        if !l["runtime"]["edit"].is_null() {
+            if l["runtime"]["edit"]["instance"] == id {
+                return Ok(json!(true));
+            }
+            return Err("Save or cancel the current settings window first".into());
+        }
+        l["runtime"]["edit"] = json!({"instance":id,"serial":l["revision"].as_u64().unwrap().checked_add(1).ok_or("Revision exhausted")?});
+        self.commit(&mut l)?;
+        Ok(json!(true))
+    }
+    fn finish_edit(&self, id: &str, serial: &str) -> Result<Value> {
+        let _lock = self.lock()?;
+        let mut l = self.layout()?;
+        if l["runtime"]["edit"]["instance"] == id
+            && l["runtime"]["edit"]["serial"]
+                .as_u64()
+                .map(|n| n.to_string())
+                .as_deref()
+                == Some(serial)
+        {
+            l["runtime"]["edit"] = Value::Null;
+            self.commit(&mut l)?;
+        }
+        Ok(json!(true))
+    }
+    fn ensure_no_editor(&self, l: &Value, id: &str) -> Result<()> {
+        let editor = l["runtime"]["edit"]["instance"].as_str().unwrap_or("");
+        if l["placements"][editor]["packageId"] == id {
+            return Err("Save or cancel this package's settings before changing its code".into());
+        }
+        Ok(())
+    }
     fn package_control(&self, id: &str, action: &str) -> Result<Value> {
         if !["restart", "disable", "enable"].contains(&action) {
             return Err("Use restart, disable or enable".into());
@@ -473,6 +523,10 @@ impl Registry {
             .unwrap()
             .checked_add(1)
             .ok_or("Revision exhausted")?;
+        let editor = l["runtime"]["edit"]["instance"].as_str().unwrap_or("");
+        if l["placements"][editor]["packageId"] == id {
+            l["runtime"]["edit"] = Value::Null;
+        }
         l["runtime"]["packageControls"][id] = json!({"disabled":action=="disable","serial":serial});
         self.commit(&mut l)?;
         Ok(json!(true))
@@ -506,12 +560,14 @@ impl Registry {
             }
             "close-manager" => runtime["managerOpen"] = json!(false),
             "arrange" => {
+                runtime["revealUntil"] = json!(0);
                 runtime["editing"] = json!(!runtime["editing"].as_bool().unwrap_or(false));
                 runtime["shown"] = json!(true);
             }
             "finish-arrange" => runtime["editing"] = json!(false),
             "show" => runtime["shown"] = json!(true),
             "hide-all" => {
+                runtime["revealUntil"] = json!(0);
                 runtime["shown"] = json!(false);
                 runtime["editing"] = json!(false);
             }
@@ -618,6 +674,7 @@ impl Registry {
         let m = validate(source)?;
         let id = m["id"].as_str().unwrap();
         let mut l = self.layout()?;
+        self.ensure_no_editor(&l, id)?;
         let old = self.source(&l, id).ok().filter(|p| p.exists());
         if l["placements"].as_object().unwrap().values().any(|p| {
             p["packageId"] == id && !m["families"].as_array().unwrap().contains(&p["size"])
@@ -705,6 +762,7 @@ impl Registry {
         let _lock = self.lock()?;
         self.package(id)?;
         let mut l = self.layout()?;
+        self.ensure_no_editor(&l, id)?;
         let previous = l["packages"][id]["previous"].clone();
         if !previous.is_string() {
             return Err("No previous package version".into());
@@ -1011,22 +1069,10 @@ fn run(args: &[String]) -> Result<Value> {
         return island::supervise(Path::new(&args[1]));
     }
     if cmd == "edit" && args.len() == 2 {
-        let r = Registry::from_env()?;
-        let _lock = r.lock()?;
-        let mut layout = r.layout()?;
-        if !layout["placements"][&args[1]].is_object() {
-            return Err("Add the widget before editing it".into());
-        }
-        if reveal::active(
-            layout["runtime"]["revealUntil"].as_u64().unwrap_or(0),
-            reveal::now(),
-        ) {
-            return Err("Dismiss reveal before opening settings".into());
-        }
-        layout["runtime"]["edit"] =
-            json!({"instance":args[1],"serial":layout["revision"].as_u64().unwrap_or(0)+1});
-        r.commit(&mut layout)?;
-        return Ok(json!(true));
+        return Registry::from_env()?.request_edit(&args[1]);
+    }
+    if cmd == "edit-done" && args.len() == 3 {
+        return Registry::from_env()?.finish_edit(&args[1], &args[2]);
     }
 
     if cmd == "package-control" && args.len() == 3 {
@@ -1036,9 +1082,12 @@ fn run(args: &[String]) -> Result<Value> {
     if cmd == "weather-permission" && args.len() == 3 {
         return weather::grant(&Registry::from_env()?, &args[1], &args[2]);
     }
+    if cmd == "new" && args.len() == 4 {
+        return sdk::scaffold(Path::new(&args[1]), &args[2], &args[3]);
+    }
     if cmd == "help" {
         return Ok(
-            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["new PATH ID NAME","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
@@ -1812,6 +1861,7 @@ mod tests {
         r.placement("io.example.test", "add", None).unwrap();
         let before = r.layout().unwrap()["placements"].clone();
         r.package_control("io.example.test", "disable").unwrap();
+        assert!(r.request_edit("io.example.test").is_err());
         assert_eq!(r.snapshot().unwrap()["catalog"][0]["packageDisabled"], true);
         let serial = r.layout().unwrap()["runtime"]["packageControls"]["io.example.test"]["serial"]
             .as_u64()
@@ -1830,5 +1880,36 @@ mod tests {
         );
         assert_eq!(state["placements"], before);
         assert!(r.package_control("io.example.test", "exec").is_err());
+    }
+    #[test]
+    fn code_changes_wait_for_owned_editor_and_stale_close_cannot_release_it() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        r.request_edit("io.example.test").unwrap();
+        let before = r.layout().unwrap();
+        assert!(r.deploy(&src, true).is_err());
+        assert_eq!(r.layout().unwrap(), before);
+        r.finish_edit("io.example.test", "wrong").unwrap();
+        assert_eq!(r.layout().unwrap(), before);
+        r.finish_edit(
+            "io.example.test",
+            &before["runtime"]["edit"]["serial"]
+                .as_u64()
+                .unwrap()
+                .to_string(),
+        )
+        .unwrap();
+        r.deploy(&src, true).unwrap();
+        r.request_edit("io.example.test").unwrap();
+        assert!(r.rollback("io.example.test").is_err());
+        r.package_control("io.example.test", "restart").unwrap();
+        r.rollback("io.example.test").unwrap();
     }
 }

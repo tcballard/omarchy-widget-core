@@ -4,7 +4,7 @@ Experimental API 2. Package version, manifest schema version and Core API are se
 
 ## Identity and manifest
 
-A package has a reverse-domain `id`; v0.0.2 supports one widget definition (`main`) per package. Desktop instances have independent `instanceId` values and settings. The first instance retains the package ID for legacy command compatibility; `duplicate` creates another identity.
+A package has a reverse-domain `id`; v0.0.2 supports one widget definition (`main`) per package. Desktop instances have independent `instanceId` values and settings. Manager Add and `create` always allocate a fresh identity; legacy `add PACKAGE` retains the package ID. `duplicate` also creates a fresh identity.
 
 See `examples/notes/widget.json` for a complete API 2 package. Required fields: `schemaVersion:2`, `kind:"desktop-widget"`, `coreApi:2`, `id`, `name`, numeric `version`, relative QML `entryPoint`, unique `families`, `defaultFamily`, object `defaults`. Optional `settingsEntryPoint` supplies the editor body. Families are `small`, `medium`, `large`; Core owns dimensions, frame, padding and movement.
 
@@ -20,7 +20,7 @@ The root QML item declares `required property var widgetContext`. Core passes it
 - `active`: whether the host considers the widget visible. Suspend background work when false.
 - `theme`: Core-owned foreground, background, accent, muted and urgent colors.
 - `metrics`: Core-owned font and spacing helpers.
-- `appearance`: theme widget tokens with optional per-instance overrides; effective desktop border size and rounding take precedence.
+- `appearance`: desktop-owned widget tokens; effective desktop border size and rounding take precedence.
 - `requestConfigure()`: opens Core's settings surface when an editor is declared.
 
 Legacy API 1 additionally uses `sizeName`, `requestInput(bool)`, `saveSettings(object)`, `saving`, `saved`, and `saveError`. `saveSettings` returning true means queued, not durably saved. Observe completion state. No concurrent save for the same instance is accepted. The compatibility `qs.Commons` and `qs.Ui` modules belong to Core; they are not the shell's singletons and do not promise the full Quattro plugin API.
@@ -29,7 +29,7 @@ Legacy API 1 additionally uses `sizeName`, `requestInput(bool)`, `saveSettings(o
 
 The optional editor declares `required property var settingsContext`. It renders only its body and edits `draftSettings` by assigning a new object. Core owns the surrounding Save/Cancel controls, focus, busy state, errors and close-on-acknowledgement. The context also exposes `theme`, `metrics`, and `appearance`.
 
-Cancel discards the draft. Save sends `{revision,settings}`. A stale revision fails without overwriting durable settings. Core retains the failed draft; cancel/reopen to load newer settings. Widget-specific field validation remains the widget author's responsibility; Core enforces object and byte limits.
+Cancel discards the draft. Save sends `{revision,settings}`. A stale revision fails without overwriting durable settings. Core retains the failed draft; cancel/reopen to load newer settings. The editor may expose validationError for immediate feedback. Core enforces the optional settingsSchema as well as object and byte limits at every save.
 
 Opening the same instance's editor again retains the current draft. Finish with
 Save or Cancel before opening a different instance in the same package runner.
@@ -51,13 +51,13 @@ Core serializes UI writes, coalesces queued placement requests for the same inst
 
 ## Runtime boundary
 
-Widget QML and its settings editor run in a per-package Bubblewrap island, outside both the main shell and the trusted Core manager. Instances of the same package share a runner. Do not depend on shell services, direct filesystem persistence or raw compositor protocols. Use `widgetContext` and the acknowledged save contract. Core supplies themes through snapshots and mediates durable state; the runner cannot access another package's settings. Settings editors use ordinary floating windows. Network access is denied. See runtime-and-security.md for the filtered display policy and remaining limits.
+Widget QML and its settings editor run in a per-package Bubblewrap island, outside both the main shell and the trusted Core manager. Instances of the same package share a runner. Do not depend on shell services, direct filesystem persistence or raw compositor protocols. Use `widgetContext` and the acknowledged save contract. Core supplies themes through snapshots and mediates durable state; the runner cannot access another package's settings. Settings editors use ordinary floating windows. Raw renderer network access is denied; the optional Core weather broker is permissioned separately. See runtime-and-security.md for the filtered display policy and remaining limits.
 
 ## Workspace placement extension
 
 Placement has an optional `workspace` field: absent/null means all workspaces; integers 1–9999 select a numbered workspace on the instance's configured monitor. `workspace INSTANCE_ID all|NUMBER` changes this field without changing the widget's settings revision. Existing `place` calls preserve it and `duplicate` copies it.
 
-Snapshots include `desktop: {available, monitors, error?}`. `monitors` maps output names to active numbered workspace IDs, with no titles or window information. The host applies workspace matching before enabling the widget Loader; `widgetContext.active` follows visibility. An unavailable desktop snapshot leaves all widgets unplaced. The broker permits workspace assignment only for an instance owned by its package. Existing API 2 contexts and manifest fields remain unchanged.
+Snapshots include `desktop: {available, monitors, error?}`. `monitors` maps output names to active numbered workspace IDs, with no titles or window information. The host applies workspace matching to visibility; `widgetContext.active` follows it. Workspace-hidden views remain loaded to receive lifecycle signals. An unavailable desktop snapshot leaves all widgets unplaced. The broker permits workspace assignment only for an instance owned by its package. Existing API 2 contexts and manifest fields remain unchanged.
 
 ## Cell placement extension
 
@@ -119,3 +119,17 @@ of QML. See [network-widgets.md](network-widgets.md) for the working optional
 weather contract. The shared `qml/Lifecycle.qml` and `qml/DataStatus.qml` supply
 signals and status presentation. Editors may expose `validationError`; Core
 shows it and disables Save while nonempty. Saved data also needs schema validation.
+
+
+## Authoring and recovery extensions
+
+See [authoring-sdk.md](authoring-sdk.md) for `new PATH ID NAME`, external command
+dependencies and repeatable previews. `settingsVersion`, `settingsSchema` and
+`migrations` are specified in [recovery.md](recovery.md). Each settings window
+registers with Core before loading. Save or Cancel it before a package update or
+rollback. Explicit package restart clears a stuck editor request and discards its
+unapplied draft. Only one registered settings window is opened at a time.
+
+Frame appearance belongs to the desktop. Legacy per-instance appearance values
+remain in saved settings for compatibility but do not override the shared frame.
+Widget content can interpret its own settings within the frame.
