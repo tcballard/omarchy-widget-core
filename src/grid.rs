@@ -53,6 +53,9 @@ pub fn screens(raw: &Value, inside: [f64; 4], outside: [f64; 4]) -> Result<Value
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 120)
             .ok_or("Invalid monitor")?;
+        if out.contains_key(name) {
+            return Err("Duplicate monitor name".into());
+        }
         let scale = number(&m["scale"])?;
         if !(0.25..=8.0).contains(&scale) {
             return Err("Invalid monitor scale".into());
@@ -103,10 +106,13 @@ pub fn migrate(placements: &mut Value, desktop: &Value) -> bool {
             continue;
         }
         let preferred = p["monitor"].as_str().unwrap_or("").to_owned();
-        let Some((name, g)) = desktop["grids"]
-            .as_object()
-            .and_then(|gs| gs.get_key_value(&preferred).or_else(|| gs.iter().next()))
-        else {
+        let Some((name, g)) = desktop["grids"].as_object().and_then(|gs| {
+            if preferred.is_empty() {
+                gs.iter().next()
+            } else {
+                gs.get_key_value(&preferred)
+            }
+        }) else {
             continue;
         };
         let col = ((p["x"].as_f64().unwrap_or(0.0) - g["x"].as_f64().unwrap())
@@ -154,6 +160,9 @@ pub fn overlap(a: &Value, b: &Value) -> bool {
 }
 pub fn resolve(placements: &Value, desktop: &Value) -> Value {
     let mut result = serde_json::Map::new();
+    if desktop["available"] == false {
+        return Value::Object(result);
+    }
     let mut entries: Vec<_> = placements.as_object().unwrap().iter().collect();
     entries.sort_by_key(|(id, p)| (p["activationOrder"].as_u64().unwrap_or(0), *id));
     // Reserve all viable preferences before allocating any temporary fallback.
@@ -308,5 +317,54 @@ pub mod tests {
         assert_eq!(resolve(&ps, &d)["a"]["column"], 0);
         d["grids"]["DP-1"]["columns"] = json!(4);
         assert_eq!(resolve(&ps, &d)["a"]["column"], 2);
+    }
+    #[test]
+    fn disconnected_legacy_position_waits_for_its_monitor() {
+        let mut d = desktop();
+        let mut ps = json!({"a":{"enabled":true,"monitor":"HDMI-A-1","x":412,"y":42,"size":"small","settings":{"city":"London"}}});
+        let original = ps.clone();
+        assert!(!migrate(&mut ps, &d));
+        assert_eq!(ps, original);
+        assert_eq!(resolve(&ps, &d)["a"]["monitor"], "DP-1");
+        d["grids"]["HDMI-A-1"] = d["grids"]["DP-1"].clone();
+        assert!(migrate(&mut ps, &d));
+        assert_eq!(ps["a"]["cell"]["column"], 2);
+        assert_eq!(resolve(&ps, &d)["a"]["monitor"], "HDMI-A-1");
+    }
+    #[test]
+    fn topology_matrix_preserves_preferences_and_valid_bounds() {
+        let ps = json!({"a":p("DP-1",2,1,"large",Value::Null),"b":p("HDMI-A-1",0,0,"medium",Value::Null),"c":p("DP-1",0,0,"small",json!(2))});
+        let original = ps.clone();
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            for transform in 0..8 {
+                for connected in [false, true] {
+                    let mut raw = json!([{"name":"DP-1","width":1920,"height":1200,"scale":scale,"transform":transform,"reserved":[0,32,0,24]}]);
+                    if connected {
+                        let mut m = raw[0].clone();
+                        m["name"] = json!("HDMI-A-1");
+                        raw.as_array_mut().unwrap().push(m);
+                    }
+                    let mut d =
+                        json!({"available":true,"grids":screens(&raw,[5.0;4],[10.0;4]).unwrap()});
+                    let resolved = resolve(&ps, &d);
+                    let rs: Vec<_> = resolved.as_object().unwrap().values().collect();
+                    for (i, r) in rs.iter().enumerate() {
+                        let g = &d["grids"][r["monitor"].as_str().unwrap()];
+                        assert!(
+                            r["column"].as_u64().unwrap() + r["columns"].as_u64().unwrap()
+                                <= g["columns"].as_u64().unwrap()
+                        );
+                        assert!(
+                            r["row"].as_u64().unwrap() + r["rows"].as_u64().unwrap()
+                                <= g["rows"].as_u64().unwrap()
+                        );
+                        assert!(rs[i + 1..].iter().all(|other| !overlap(r, other)));
+                    }
+                    d["available"] = json!(false);
+                    assert_eq!(resolve(&ps, &d), json!({}));
+                    assert_eq!(ps, original);
+                }
+            }
+        }
     }
 }
