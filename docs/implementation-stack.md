@@ -23,7 +23,8 @@ verification; no live Omarchy session is available in the build environment.
    (`feat/widgets-manager` → `feat/widget-foundation`) implements milestone 2.
    It adds the installed-type gallery, instance actions, previews and retained-state
    uninstall. Its PR is based on Core #5, not main.
-5. Subsequent Core branches target the preceding Core milestone branch. Record
+5. Core [PR #7](https://github.com/tcballard/omarchy-widget-core/pull/7) hardens desktop topology handling.
+6. Subsequent Core branches target the preceding Core milestone branch. Record
    actual PR URLs here as they are opened. Do not create empty placeholder PRs.
 
 ## Milestones and remaining work
@@ -33,7 +34,7 @@ verification; no live Omarchy session is available in the build environment.
 | 1. Foundation + World Clock | Development implementation; portable checks reproduced | Independent Save/Cancel, stale revisions, duplicate identities, placement preservation and fresh-process reopen. Live settings windows and reboot remain unverified. |
 | 2. Widgets manager | Development implementation; portable tests reproduced | Available types versus instances; size previews; Add/Duplicate/Configure/Hide/Remove; separate instance removal and package uninstall with retained-state choice. |
 | 3. Desktop integration | Development implementation; portable checks reproduced | Validate existing grid and inherited ricing; reserved bounds, scaling, hotplug, workspace occupancy and preference restoration. Preserve monitor-bound workspace semantics. |
-| 4. Quick reveal | Feasibility pending | Current filter denies overlays. Prototype Core-controlled reveal without importing widget QML into the trusted manager or granting permanent overlay privileges. Prove focus return, dismissal, lock behaviour and unchanged application placement on Hyprland. |
+| 4. Quick reveal | Development prototype; live acceptance pending | Current filter denies overlays. Prototype Core-controlled reveal without importing widget QML into the trusted manager or granting permanent overlay privileges. Prove focus return, dismissal, lock behaviour and unchanged application placement on Hyprland. |
 | 5. Lifecycle + data | Pending | Explicit lifecycle, rendering versus background activity; one public weather broker with shared authorised caching, bounded fetches, permissions, stale data and retries. Keep renderer network denial. |
 | 6. Recovery + faults | Pending | Code/settings checkpoints, staged versioned migrations, compatible rollback, preserve later edits, manager-visible failures and package-level retry/disable. Test fault injection. |
 | 7. SDK + baseline | Pending | Starter, validator, shared status/settings components, deterministic previews, migration examples and external-author acceptance. Stabilise after Clock and weather exercise the contract. |

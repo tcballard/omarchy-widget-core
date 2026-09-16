@@ -21,6 +21,8 @@ Item {
     property var desktop: ({available:false,monitors:{}})
     property var themeAppearance: ({})
     property string error: ""
+    readonly property bool revealRunner: Quickshell.env("OMARCHY_WIDGET_REVEAL") === "1"
+    property bool revealing: false
     property bool shown: true
     property bool editing: false
     property bool managerOpen: false
@@ -61,6 +63,7 @@ Item {
         editorError="";
     }
     function configure(id) {
+        if(root.revealRunner) return false;
         if(managerRole) { execute(["edit",id]); return; }
         // Repeated gear presses must not reset an unsaved draft.
         if(configuring===id) return;
@@ -103,6 +106,7 @@ Item {
                 var desktop=response.desktop || ({available:false,monitors:{}});
                 if(JSON.stringify(root.desktop)!==JSON.stringify(desktop)) root.desktop=desktop;
                 if(response.runtime) {
+                    root.revealing=response.runtime.revealing === true;
                     root.shown=response.runtime.shown !== false;
                     root.editing=response.runtime.editing === true;
                     root.managerOpen=root.managerRole && response.runtime.managerOpen === true;
@@ -132,12 +136,29 @@ Item {
     Timer { interval:1000; running:true; repeat:true; onTriggered:root.refresh() }
     IpcHandler {
         target: "io.github.tcballard.widget-core"
+        function reveal(): void { root.control("reveal"); }
         function manage(): void { root.managerOpen = !root.managerOpen; if(root.managerOpen) root.refresh(); }
         function refresh(): bool { return root.refresh(); }
         function show(): void { root.shown = true; }
         function hide(): void { root.shown = false; root.control("finish-arrange"); }
         function arrange(): void { root.shown = true; root.control("arrange"); }
         function status(): string { return JSON.stringify({api:2,version:"0.0.2",installed:root.installed.length,shown:root.shown,editing:root.editing,busy:operation.busy,error:root.error}); }
+    }
+    // Trusted dismissal surface. Widget code remains in its package process.
+    PanelWindow {
+        visible: root.managerRole && root.revealing
+        anchors { top:true; bottom:true; left:true; right:true }
+        color: "transparent"
+        exclusionMode: ExclusionMode.Ignore
+        WlrLayershell.namespace: "widget-core-reveal-dismiss"
+        WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+        Item {
+            anchors.fill:parent
+            focus:true
+            Keys.onEscapePressed: root.control("dismiss-reveal")
+            MouseArea { anchors.fill:parent; onClicked:root.control("dismiss-reveal") }
+        }
     }
     PanelWindow {
         visible: root.managerOpen
@@ -204,7 +225,7 @@ Item {
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
             mask: Region {}
-            WlrLayershell.layer: WlrLayer.Bottom
+            WlrLayershell.layer: root.revealRunner ? WlrLayer.Overlay : WlrLayer.Bottom
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
             Canvas {
                 anchors.fill:parent
@@ -255,11 +276,11 @@ Item {
             color: "transparent"
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "tcballard-widget-" + modelData
-            WlrLayershell.layer: WlrLayer.Bottom
-            WlrLayershell.keyboardFocus: root.editing || context.inputRequested ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+            WlrLayershell.layer: root.revealRunner ? WlrLayer.Overlay : WlrLayer.Bottom
+            WlrLayershell.keyboardFocus: !root.revealRunner && (root.editing || context.inputRequested) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
             // No compositor command socket is exposed to the sandbox.
             // Bottom-layer surfaces remain behind fullscreen windows.
-            visible: root.shown && effective !== null && screen !== null && Workspace.visible(config.workspace, screen ? screen.name : "", root.desktop)
+            visible: (root.shown || root.revealRunner) && effective !== null && screen !== null && Workspace.visible(config.workspace, screen ? screen.name : "", root.desktop)
             function place(size, monitorName) {
                 if(!target)return false;
                 return root.execute(["place", modelData, JSON.stringify({column:target.column,row:target.row,monitor:monitorName,size:size})]);
