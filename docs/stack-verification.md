@@ -17,7 +17,7 @@ Earlier milestone hashes describe their historical snapshots.
 | SDK author workflow | Scaffold/refusal to overwrite, actual starter previews, validation, install, two instances, invalid save, independent hide/remove, retained reinstall, update/rollback passed. |
 | Installer, bindings, JS geometry/workspace and sandbox structure | Passed. |
 | Preview inspection | Actual Small and Large starter PNGs inspected; text and frame fit. Generator also renders Medium. Offscreen output only. |
-| Parent PR CI | #7–#9 fully green; #10 main run green, final companion resource run checked separately. |
+| Parent PR CI | #7–#10 fully green at their final published source commits. |
 | Live Hyprland, XPS, docking, focus/lock behaviour and actual weather provider | Not run. Required before a supported release. |
 
 CI retains five jobs: Rust (including both socket tests), QML/integration/SDK,

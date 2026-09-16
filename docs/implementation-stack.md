@@ -30,8 +30,9 @@ verification; no live Omarchy session is available in the build environment.
    (`feat/widget-lifecycle` → `feat/widget-reveal`) adds lifecycle and weather data.
 8. Core [PR #10](https://github.com/tcballard/omarchy-widget-core/pull/10)
    (`feat/widget-recovery` → `feat/widget-lifecycle`) adds migrations and fault controls.
-9. Core `feat/widget-sdk` → `feat/widget-recovery` completes the authoring SDK and
-   final integration fixes. The actual PR link is recorded after creation.
+9. Core [PR #11](https://github.com/tcballard/omarchy-widget-core/pull/11)
+   (`feat/widget-sdk` → `feat/widget-recovery`) completes the authoring SDK and
+   final integration fixes.
 
 Retarget each dependent PR after its parent merges. These remain draft development
 PRs; none were merged, deployed or released by this implementation task.

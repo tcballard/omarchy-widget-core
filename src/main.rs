@@ -469,6 +469,10 @@ impl Registry {
         if !l["placements"][id].is_object() {
             return Err("Add the widget before editing it".into());
         }
+        let package = l["placements"][id]["packageId"].as_str().unwrap();
+        if l["runtime"]["packageControls"][package]["disabled"] == true {
+            return Err("Enable this package before opening settings".into());
+        }
         if reveal::active(
             l["runtime"]["revealUntil"].as_u64().unwrap_or(0),
             reveal::now(),
@@ -1857,6 +1861,7 @@ mod tests {
         r.placement("io.example.test", "add", None).unwrap();
         let before = r.layout().unwrap()["placements"].clone();
         r.package_control("io.example.test", "disable").unwrap();
+        assert!(r.request_edit("io.example.test").is_err());
         assert_eq!(r.snapshot().unwrap()["catalog"][0]["packageDisabled"], true);
         let serial = r.layout().unwrap()["runtime"]["packageControls"]["io.example.test"]["serial"]
             .as_u64()

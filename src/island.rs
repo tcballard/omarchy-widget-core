@@ -100,7 +100,8 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
             let d = workspaces::snapshot();
             let positions = grid::resolve(&layout["placements"], &d);
             let monitor = positions[&args[1]]["monitor"].as_str().unwrap_or("");
-            let active = p["enabled"] == true
+            let active = layout["runtime"]["packageControls"][package]["disabled"] != true
+                && p["enabled"] == true
                 && !monitor.is_empty()
                 && (layout["runtime"]["shown"] != false
                     || reveal::active(
