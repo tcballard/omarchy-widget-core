@@ -19,7 +19,8 @@ verification; no live Omarchy session is available in the build environment.
    two real World Clock editors against production QML and the Rust registry.
    The CI fixture is pinned to the World Clock commit above; it does not follow
    an unreviewed moving branch.
-4. Core `feat/widgets-manager` → `feat/widget-foundation` implements milestone 2.
+4. Core [PR #6](https://github.com/tcballard/omarchy-widget-core/pull/6)
+   (`feat/widgets-manager` → `feat/widget-foundation`) implements milestone 2.
    It adds the installed-type gallery, instance actions, previews and retained-state
    uninstall. Its PR is based on Core #5, not main.
 5. Subsequent Core branches target the preceding Core milestone branch. Record
