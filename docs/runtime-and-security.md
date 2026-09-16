@@ -28,7 +28,7 @@ Settings editors use ordinary floating windows. They do not require an overlay-l
 
 ## Remaining limits
 
-This is a development security boundary, not an independently audited hostile-code platform. Linux, Qt, the compositor and the proxy remain trusted dependencies. No custom seccomp profile or network/file portal broker is supplied. Network access remains denied for every widget.
+This is a development security boundary, not an independently audited hostile-code platform. Linux, Qt, the compositor and the proxy remain trusted dependencies. No custom seccomp profile or general network/file portal is supplied. Renderer network access remains denied. The optional fixed-provider weather broker is documented in network-widgets.md.
 
 Each package service has its own enforced budget: `MemoryMax=256M` (256 MiB), `MemorySwapMax=0`, `CPUQuota=25%` (one quarter of one CPU), and `TasksMax=64` (processes and threads combined). Instances from the same package share this budget. These are ceilings, not reserved allocations or measured typical consumption. CPU pressure throttles the package; the task ceiling rejects further task creation. `OOMPolicy=kill` makes a cgroup memory-exhaustion event terminate the entire offending package, including its proxy. The supervisor applies its existing three-attempt session budget and five-second retry delay.
 

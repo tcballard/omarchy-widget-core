@@ -26,6 +26,7 @@ FocusScope {
     signal duplicateRequested(string id)
     signal removeRequested(string id)
     signal uninstallRequested(string packageId, string policy)
+    signal weatherPermissionRequested(string packageId, bool allowed)
     function ask(kind,id,name) { if(!busy) { confirmation={kind:kind,id:id,name:name}; confirmationPanel.forceActiveFocus(); } }
     function confirm(policy) {
         if(busy || !confirmation)return;
@@ -81,6 +82,17 @@ FocusScope {
                     Label { text: packageCard.modelData.packageId + " · " + packageCard.modelData.manifest.version; color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.fillWidth: true; elide: Text.ElideMiddle }
                     FamilyPreview { Layout.fillWidth: true; Layout.preferredHeight: Style.space(110); family: packageCard.family; imageSource: root.previewUrl(packageCard.modelData,packageCard.family); visible: !packageCard.modelData.problem }
                     Label { text: packageCard.modelData.problem || (!packageCard.modelData.manifest.previews || !packageCard.modelData.manifest.previews[packageCard.family] ? "Size preview · no widget image supplied" : "Widget preview"); color: packageCard.modelData.problem ? Color.urgent : Color.muted; Layout.fillWidth: true; wrapMode: Text.Wrap; font.pixelSize: Style.font.bodySmall }
+                    Label {
+                        visible: (packageCard.modelData.manifest.capabilities || []).indexOf("weather")>=0
+                        text: "Weather sends this widget's coordinates to Open-Meteo. Permission applies to this installed version."
+                        color: Color.muted; Layout.fillWidth:true; wrapMode:Text.Wrap
+                    }
+                    Ui.Button {
+                        visible: (packageCard.modelData.manifest.capabilities || []).indexOf("weather")>=0
+                        text: packageCard.modelData.weatherAllowed ? "Revoke weather access" : "Allow weather access"
+                        enabled: !root.busy
+                        onClicked: root.weatherPermissionRequested(packageCard.modelData.packageId,!packageCard.modelData.weatherAllowed)
+                    }
                     Flow {
                         Layout.fillWidth: true; spacing: Style.space(6)
                         Repeater {

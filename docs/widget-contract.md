@@ -100,3 +100,22 @@ The manager displays static artwork only, using a labelled footprint when absent
 or undecodable. Preview QML, network URLs and executable preview generators are
 not supported. The renderer is still untrusted; these assets are not a security
 review or an authenticity guarantee.
+
+## Lifecycle and public data (stack milestone 5)
+
+Context `active` and `backgroundAllowed` are true only while the instance is
+shown on its assigned workspace. `lifecycle` is visible or suspended. Signals
+are resuming → becameVisible and becameHidden → suspending. Hidden workspace
+views remain loaded so they receive transitions; explicit hide/removal, package
+restart or process failure can destroy the view without a final signal. Never
+rely on a shutdown callback for persistence. Timers should store an absolute
+end time, then compute remaining time when visible again. Clock already stops
+its refresh timer when inactive. All instances of one package share a process
+and cgroup; cooperative lifecycle is not per-instance CPU isolation.
+
+`refresh` declares none, minute or weather. Use active/backgroundAllowed to gate
+local timers. Core enforces the weather broker's refresh budget independently
+of QML. See [network-widgets.md](network-widgets.md) for the working optional
+weather contract. The shared `qml/Lifecycle.qml` and `qml/DataStatus.qml` supply
+signals and status presentation. Editors may expose `validationError`; Core
+shows it and disables Save while nonempty. Saved data also needs schema validation.

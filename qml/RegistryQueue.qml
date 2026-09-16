@@ -11,7 +11,7 @@ Item {
     signal completed(var request, bool success, var response, string message)
     function enqueue(args, token) {
         var queue = pending.slice();
-        if (args[0] === "list" || args[0] === "place") {
+        if (args[0] === "list" || args[0] === "place" || args[0] === "weather") {
             for (var i=0;i<queue.length;i++) {
                 if (queue[i].args[0] === args[0] && queue[i].args[1] === args[1]) {
                     queue[i] = {args:args,token:token || ""}; pending=queue; return true;
