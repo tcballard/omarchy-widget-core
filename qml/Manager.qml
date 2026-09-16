@@ -27,6 +27,8 @@ FocusScope {
     signal removeRequested(string id)
     signal uninstallRequested(string packageId, string policy)
     signal weatherPermissionRequested(string packageId, bool allowed)
+    signal packageControlRequested(string packageId, string action)
+    signal rollbackRequested(string packageId)
     function ask(kind,id,name) { if(!busy) { confirmation={kind:kind,id:id,name:name}; confirmationPanel.forceActiveFocus(); } }
     function confirm(policy) {
         if(busy || !confirmation)return;
@@ -86,6 +88,17 @@ FocusScope {
                         visible: (packageCard.modelData.manifest.capabilities || []).indexOf("weather")>=0
                         text: "Weather sends this widget's coordinates to Open-Meteo. Permission applies to this installed version."
                         color: Color.muted; Layout.fillWidth:true; wrapMode:Text.Wrap
+                    }
+                    Label {
+                        text: packageCard.modelData.health ? "Runner: "+packageCard.modelData.health.state+" · failures "+packageCard.modelData.health.failures : "Runner status unavailable"
+                        color: packageCard.modelData.health && packageCard.modelData.health.state==="failed" ? Color.urgent : Color.muted
+                        Layout.fillWidth:true; wrapMode:Text.Wrap
+                    }
+                    Flow {
+                        Layout.fillWidth:true; spacing:Style.space(6)
+                        Ui.Button {text:"Restart"; enabled:!root.busy; onClicked:root.packageControlRequested(packageCard.modelData.packageId,"restart")}
+                        Ui.Button {text:packageCard.modelData.packageDisabled ? "Enable package" : "Disable package"; enabled:!root.busy; onClicked:root.packageControlRequested(packageCard.modelData.packageId,packageCard.modelData.packageDisabled ? "enable" : "disable")}
+                        Ui.Button {text:"Roll back update"; enabled:!root.busy; onClicked:root.rollbackRequested(packageCard.modelData.packageId)}
                     }
                     Ui.Button {
                         visible: (packageCard.modelData.manifest.capabilities || []).indexOf("weather")>=0

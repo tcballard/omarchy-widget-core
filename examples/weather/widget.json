@@ -1,1 +1,51 @@
-{"schemaVersion":2,"coreApi":2,"kind":"desktop-widget","id":"io.github.tcballard.weather-example","name":"Weather example","version":"0.1.0","entryPoint":"View.qml","settingsEntryPoint":"Settings.qml","families":["small","medium","large"],"defaultFamily":"small","defaults":{"latitude":51.5,"longitude":-0.12,"label":"London"},"capabilities":["weather"],"refresh":"weather"}
+{
+  "schemaVersion": 2,
+  "coreApi": 2,
+  "kind": "desktop-widget",
+  "id": "io.github.tcballard.weather-example",
+  "name": "Weather example",
+  "version": "0.1.0",
+  "entryPoint": "View.qml",
+  "settingsEntryPoint": "Settings.qml",
+  "families": [
+    "small",
+    "medium",
+    "large"
+  ],
+  "defaultFamily": "small",
+  "defaults": {
+    "latitude": 51.5,
+    "longitude": -0.12,
+    "label": "London"
+  },
+  "capabilities": [
+    "weather"
+  ],
+  "refresh": "weather",
+  "settingsVersion": 1,
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "label": {
+        "type": "string",
+        "maxLength": 80
+      },
+      "latitude": {
+        "type": "number",
+        "minimum": -90,
+        "maximum": 90
+      },
+      "longitude": {
+        "type": "number",
+        "minimum": -180,
+        "maximum": 180
+      }
+    },
+    "required": [
+      "label",
+      "latitude",
+      "longitude"
+    ],
+    "additionalProperties": false
+  }
+}
