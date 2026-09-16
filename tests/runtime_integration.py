@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory() as directory:
     body+='''
         function initialize(value) { installed=JSON.parse(value).installed; }
         function backlog() {
-            for(var i=1;i<=20;i++) execute(["place","io.example.fixture",JSON.stringify({x:i*16,y:32,monitor:"",size:"large"})]);
+            for(var i=1;i<=20;i++) execute(["place","io.example.fixture",JSON.stringify({column:i,row:0,monitor:"DP-1",size:"large"})]);
             refresh();
         }
         function staleSave() { save("io.example.fixture",{cities:[{label:"Stale",zone:"UTC"}]},0); }
@@ -109,8 +109,9 @@ Window {
     function backlog() { root.backlog(); }
     function staleSave() { root.staleSave(); }
     function gridCheck() {
-        return Grid.snap(39,1920,400)===32 && Grid.snap(9999,1920,400)===1504
-            && Grid.snap(-20,1920,400)===16 && Grid.geometry("medium").width===400;
+        var g={x:10,y:42,cell:192,gapX:10,gapY:10,columns:4,rows:3};
+        return Grid.geometry("medium",g).width===394 && Grid.cell(212,42,g).column===1
+            && Grid.valid(Grid.target(212,42,"medium","DP-1",null,g),g,[]);
     }
 }
 ''')
@@ -134,7 +135,7 @@ Window {
     saved=cli('list')['installed'][0]['placement']
     assert saved['settings']['cities'][0]['label']=='Paris'
     assert saved['revision']==1
-    assert saved['x']==320
+    assert saved['cell']=={'column':0,'row':0}, 'Unavailable desktop must reject placement and retain preference'
     assert len([c for c in commands if 'place' in c])==1, 'Placement requests were not coalesced'
     QMetaObject.invokeMethod(window,'staleSave')
     spin(lambda:bool(panel.property('error')),'Stale editor was silently accepted')

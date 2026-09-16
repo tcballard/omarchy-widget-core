@@ -1,0 +1,20 @@
+{
+  "README.md": "f9de4a6431aec4c54e04b11d2b4010b5256cf103b2faf4fbd4984848151dc5a3",
+  "Host.qml": "23d53ede49c58115a7df7bbd05a0bc3c7df9578d075d2bff26d8b69912f40211",
+  "tests/runtime_integration.py": "afba3cb8fd342b8213b7f7862aff724aa6726b85a268c8eaac39535d359d5ca1",
+  "tests/grid.cjs": "7ecec56d57d824ac4a4a7072427da4bfe5229b811f2d8236ae5b4eec5b178e35",
+  "qml/WidgetFrame.qml": "62d6823fff1f0b88a7e8a0674cf554b4827e9fd49b61b87b971d1128f99e2fef",
+  "qml/Manager.qml": "7ddb741205f026c931b676e876ced1c706889dfb98be5bf4390e219c290d65e9",
+  "qml/Grid.js": "3b4b5d02f863602cd9010fc8331ab6610deb7afca2e2a3d790c6a4b7eca7b510",
+  "src/grid.rs": "99659653f7ddc9d7ead01a9990bbdd8b009beb20b20a51deb8fb053be7ae5ae2",
+  "src/main.rs": "344b6385ed8983d0c33b736b64ed96607aeb83d4c2a5faf5b642e2488ff7210d",
+  "src/workspaces.rs": "fa410fa24ebe070a51d19fa834da4a8c9c23c79179cf4fe131d47c5543928d63",
+  "docs/grid-layout.md": "65bf4949ed3022ca45a68008fcc9741c34206a373d4ef89f68897d588fba445b",
+  "docs/grid-verification.md": "17a8ce1d330c9bda8a6550430f167abbe1120695ed9d7e1495783b94c7af33bb",
+  "docs/widget-appearance.md": "70476d15198b90269f01c8bfda2ebf5b1fe25dbf08a41697ef770b1803fce8a8",
+  "docs/runtime-and-security.md": "6244c5049b58f4a30607407d5542af2477de517f2bf797140c02e41427a9bef2",
+  "docs/assumptions.md": "980d962b942060caa224a7e1bd05f19a7050018030084b7d0ab08cfd63ffd6d1",
+  "docs/widget-contract.md": "d49aaad1a0063b02bffe4d0b29d061a5baf6dbeba0086b92e39dbba73f78c436",
+  "docs/widget-authoring.md": "9d0a31df33f8ebaab961530555c097ba71fdb29e18b8eebca86adc53ad9a28a7",
+  ".github/workflows/check.yml": "7e19e8d7cd5a38ca251219d59531b24aef2d78ebc303f88ac318733f274338e4"
+}

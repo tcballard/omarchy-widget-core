@@ -11,6 +11,9 @@ FocusScope {
     property string sizeName: "standard"
     property string monitorName: ""
     property string notice: ""
+    property real moveStepX: 192
+    property real moveStepY: 192
+    property bool invalidTarget: false
     property var appearance: ({})
     function number(key, fallback, min, max) {
         var v=appearance[key];
@@ -31,7 +34,7 @@ FocusScope {
     property Item roundedMask: Rectangle {
         parent:root
         width: root.width; height: root.height
-        radius: root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,40)
+        radius: root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,1000)
         color: "white"; visible:false; layer.enabled:true
     }
     layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
@@ -40,11 +43,10 @@ FocusScope {
     Keys.onPressed: function(event) {
         if(event.key===Qt.Key_Escape){root.escapeRequested();event.accepted=true;return;}
         if(!root.editing)return;
-        var d=Style.space(16);
-        if(event.key===Qt.Key_Left)root.moved(-d,0);
-        else if(event.key===Qt.Key_Right)root.moved(d,0);
-        else if(event.key===Qt.Key_Up)root.moved(0,-d);
-        else if(event.key===Qt.Key_Down)root.moved(0,d);
+        if(event.key===Qt.Key_Left)root.moved(-root.moveStepX,0);
+        else if(event.key===Qt.Key_Right)root.moved(root.moveStepX,0);
+        else if(event.key===Qt.Key_Up)root.moved(0,-root.moveStepY);
+        else if(event.key===Qt.Key_Down)root.moved(0,root.moveStepY);
         else return;
         root.finishedMoving();event.accepted=true;
     }
@@ -52,9 +54,9 @@ FocusScope {
         objectName:"widget-surface"
         anchors.fill:parent
         color:Qt.rgba(Color.background.r,Color.background.g,Color.background.b,root.number("backgroundAlpha",1,0.6,1))
-        border.width:root.editing?1:root.number("borderWidth",1,0,3)
-        border.color:root.editing?Color.accent:Qt.rgba(Color.foreground.r,Color.foreground.g,Color.foreground.b,root.number("borderAlpha",0.12,0,1))
-        radius:root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,40)
+        border.width:root.editing?1:root.number("borderWidth",1,0,100)
+        border.color:root.editing?(root.invalidTarget?Color.urgent:Color.accent):Qt.rgba(Color.foreground.r,Color.foreground.g,Color.foreground.b,root.number("borderAlpha",0.12,0,1))
+        radius:root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,1000)
     }
     ColumnLayout {
         anchors.fill:parent;spacing:0
@@ -83,7 +85,7 @@ FocusScope {
             Ui.Button { text:"↗";tooltipText:root.monitorName;focusable:true;onClicked:root.monitorRequested() }
             Ui.Button { text:"Hide";focusable:true;onClicked:root.hideRequested() }
         }
-        Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Math.max(Style.space(root.number("padding",12,8,24)),Math.ceil(root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,40)*0.3));clip:true}
+        Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Math.max(Style.space(root.number("padding",12,8,24)),Math.ceil(root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,1000)*0.3));clip:true}
         Label { visible:root.notice!=="";text:root.notice;color:Color.urgent;font.pixelSize:Style.font.bodySmall;Layout.fillWidth:true;Layout.margins:Style.space(10) }
     }
 }

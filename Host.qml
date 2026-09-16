@@ -15,6 +15,7 @@ Item {
     readonly property bool managerRole: Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"
     property string editSerial: ""
     property var installed: []
+    property var occupancy: []
     property var desktop: ({available:false,monitors:{}})
     property var themeAppearance: ({})
     property string error: ""
@@ -22,6 +23,7 @@ Item {
     property bool editing: false
     property bool managerOpen: false
     property var saveStates: ({})
+    property var placementErrors: ({})
     property string configuring: ""
     readonly property string helper: decodeURIComponent(Qt.resolvedUrl("bin/omarchy-widget").toString().replace(/^file:\/\//, ""))
     function entry(id) {
@@ -64,11 +66,16 @@ Item {
                 states[request.token]={saving:false,error:message,saved:success}; root.saveStates=states;
                 if(success && root.configuring===request.token) root.closeSettings();
             }
-            if(!success) return;
+            if(request.args[0]==="place" || request.args[0]==="workspace") {
+                var placementErrors=Object.assign({},root.placementErrors);
+                placementErrors[request.args[1]]=message; root.placementErrors=placementErrors;
+            }
+            if(!success) { if(request.args[0]!=="list")root.refresh(); return; }
             if(request.args[0] === "list") {
                 if(response.api !== 2 || !Array.isArray(response.installed)) { root.error="Unsupported Core response"; return; }
                 // Preserve delegate focus and in-progress manager edits during polling.
                 if(JSON.stringify(root.installed)!==JSON.stringify(response.installed)) root.installed=response.installed;
+                root.occupancy=response.occupancy || [];
                 root.desktop=response.desktop || ({available:false,monitors:{}});
                 if(response.runtime) {
                     root.shown=response.runtime.shown !== false;
@@ -122,7 +129,7 @@ Item {
             workspaceError: root.desktop.error || ""
             onWorkspaceRequested: function(id,workspace) { root.execute(["workspace",id,workspace]); }
             busy: operation.busy
-            error: root.error
+            error: root.error || Object.keys(root.placementErrors).map(function(id) { return root.placementErrors[id]; }).filter(function(message) { return !!message; }).join("; ")
             onConfigureRequested: function(id) { root.control("close-manager");root.managerOpen=false;root.configure(id); }
             onCloseRequested: { root.managerOpen=false;root.control("close-manager"); }
             onRefreshRequested: root.refresh()
@@ -162,21 +169,24 @@ Item {
             visible: root.editing && root.shown
             anchors { top:true; bottom:true; left:true; right:true }
             color: "transparent"
-            exclusionMode: ExclusionMode.Normal
+            exclusionMode: ExclusionMode.Ignore
             mask: Region {}
             WlrLayershell.layer: WlrLayer.Bottom
             WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
             Canvas {
                 anchors.fill:parent
-                property real spacing: Style.space(16)
+                property var grid: root.desktop.grids ? root.desktop.grids[modelData.name] : null
+                onGridChanged: requestPaint()
                 onWidthChanged: requestPaint()
                 onHeightChanged: requestPaint()
-                onSpacingChanged: requestPaint()
                 onVisibleChanged: requestPaint()
                 onPaint: {
                     var ctx=getContext("2d"); ctx.clearRect(0,0,width,height);
-                    ctx.fillStyle=Qt.rgba(Color.foreground.r,Color.foreground.g,Color.foreground.b,0.18);
-                    for(var x=spacing;x<width;x+=spacing) for(var y=spacing;y<height;y+=spacing) ctx.fillRect(x,y,1.5,1.5);
+                    if(!grid)return;
+                    ctx.strokeStyle=Qt.rgba(Color.foreground.r,Color.foreground.g,Color.foreground.b,0.25);
+                    ctx.lineWidth=1;
+                    for(var col=0;col<grid.columns;col++) for(var row=0;row<grid.rows;row++)
+                        ctx.strokeRect(grid.x+col*(grid.cell+grid.gapX),grid.y+row*(grid.cell+grid.gapY),grid.cell,grid.cell);
                 }
             }
         }
@@ -190,30 +200,35 @@ Item {
             readonly property var config: entry ? entry.placement : ({settings:{},x:16,y:16,monitor:"",size:"medium",revision:0})
             readonly property var metadata: entry ? entry.manifest : ({families:["medium"],defaultFamily:"medium",name:"",id:""})
             readonly property string sizeName: metadata.families.indexOf(config.size)>=0 ? config.size : metadata.defaultFamily
-            readonly property var desired: Grid.geometry(sizeName)
-            property real positionX: config.x
-            property real positionY: config.y
+            readonly property var effective: entry && entry.effective ? entry.effective : null
+            readonly property var grid: effective && root.desktop.grids ? root.desktop.grids[effective.monitor] : null
+            readonly property var desired: Grid.geometry(sizeName, grid)
+            property real positionX: effective ? effective.x : 0
+            property real positionY: effective ? effective.y : 0
             property bool moving: false
-            onConfigChanged: if(!moving) { positionX=config.x;positionY=config.y; }
-            readonly property real scale: Style.spaceReal(1)
-            screen: root.screenFor(config.monitor)
+            onEffectiveChanged: if(!moving) resetPosition()
+            function resetPosition() { positionX=effective ? effective.x : 0; positionY=effective ? effective.y : 0; }
+            readonly property var target: grid ? Grid.target(positionX,positionY,sizeName,effective.monitor,config.workspace,grid) : null
+            readonly property bool validTarget: !!target && Grid.valid(target,grid,root.occupancy.filter(function(_,i) { return i!==entry.occupancyIndex; }))
+            screen: root.screenFor(effective ? effective.monitor : "")
             anchors { top: true; left: true }
             margins {
-                left: Grid.snap(window.positionX, (window.screen ? window.screen.width : 1920)/window.scale, window.desired.width)*window.scale
-                top: Grid.snap(window.positionY, (window.screen ? window.screen.height : 1080)/window.scale, window.desired.height)*window.scale
+                left: window.moving && window.target ? window.grid.x+window.target.column*(window.grid.cell+window.grid.gapX) : (window.effective ? window.effective.x : 0)
+                top: window.moving && window.target ? window.grid.y+window.target.row*(window.grid.cell+window.grid.gapY) : (window.effective ? window.effective.y : 0)
             }
-            implicitWidth: Math.min(desired.width * scale, screen ? screen.width : 1920)
-            implicitHeight: Math.min(desired.height * scale, screen ? screen.height : 1080)
+            implicitWidth: desired.width
+            implicitHeight: desired.height
             color: "transparent"
-            exclusionMode: ExclusionMode.Normal
+            exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "tcballard-widget-" + modelData
             WlrLayershell.layer: WlrLayer.Bottom
             WlrLayershell.keyboardFocus: root.editing || context.inputRequested ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
             // No compositor command socket is exposed to the sandbox.
             // Bottom-layer surfaces remain behind fullscreen windows.
-            visible: root.shown && screen !== null && Workspace.visible(config.workspace, screen ? screen.name : "", root.desktop)
+            visible: root.shown && effective !== null && screen !== null && Workspace.visible(config.workspace, screen ? screen.name : "", root.desktop)
             function place(size, monitorName) {
-                return root.execute(["place", modelData, JSON.stringify({x:margins.left/scale,y:margins.top/scale,monitor:monitorName,size:size})]);
+                if(!target)return false;
+                return root.execute(["place", modelData, JSON.stringify({column:target.column,row:target.row,monitor:monitorName,size:size})]);
             }
             QtObject {
                 id: context
@@ -227,7 +242,7 @@ Item {
                 readonly property string definitionId: "main"
                 readonly property string family: window.sizeName
                 readonly property string sizeName: window.metadata.coreApi===1 ? Grid.legacyName(window.sizeName) : window.sizeName
-                readonly property var appearance: Object.assign({}, root.themeAppearance, window.config.settings.appearance || {})
+                readonly property var appearance: Object.assign({}, root.themeAppearance, window.config.settings.appearance || {}, root.desktop.frame || {})
                 readonly property var saveState: root.saveStates[window.modelData] || ({saving:false,error:"",saved:false})
                 readonly property string saveError: saveState.error
                 readonly property bool saving: saveState.saving
@@ -247,15 +262,22 @@ Item {
                 editing: root.editing
                 sizeName: window.sizeName
                 monitorName: window.screen ? window.screen.name : ""
-                notice: context.saveError || (context.saving ? "Saving…" : "")
+                moveStepX: window.grid ? window.grid.cell+window.grid.gapX : 192
+                moveStepY: window.grid ? window.grid.cell+window.grid.gapY : 192
+                invalidTarget: window.moving && !window.validTarget
+                notice: (window.moving && !window.validTarget ? "Those cells are unavailable" : "") || root.placementErrors[window.modelData] || context.saveError || (context.saving ? "Saving…" : "")
                 configurable: !!window.metadata.settingsEntryPoint
                 onConfigureRequested: root.configure(window.modelData)
                 onEditRequested: root.control("arrange")
                 onEscapeRequested: root.control("finish-arrange")
                 onHideRequested: root.execute(["hide", window.modelData])
-                onMoved: function(dx,dy) { window.moving=true; window.positionX = Math.max(0,window.positionX+dx/window.scale); window.positionY = Math.max(0,window.positionY+dy/window.scale); }
-                onFinishedMoving: { window.place(window.sizeName, window.config.monitor);window.moving=false; }
-                onSizeRequested: { var sizes=window.metadata.families; window.place(sizes[(sizes.indexOf(window.sizeName)+1)%sizes.length],window.config.monitor); }
+                onMoved: function(dx,dy) { window.moving=true; window.positionX += dx; window.positionY += dy; }
+                onFinishedMoving: {
+                    if(window.validTarget) window.place(window.sizeName,window.effective.monitor);
+                    else { var errors=Object.assign({},root.placementErrors);errors[window.modelData]="Those cells are unavailable; placement unchanged";root.placementErrors=errors; }
+                    window.moving=false;window.resetPosition();
+                }
+                onSizeRequested: { var sizes=window.metadata.families; window.place(sizes[(sizes.indexOf(window.sizeName)+1)%sizes.length],window.effective.monitor); }
                 onMonitorRequested: { var screens=Quickshell.screens; if(screens.length) window.place(window.sizeName,screens[(screens.indexOf(window.screen)+1)%screens.length].name); }
                 Loader {
                     id: content

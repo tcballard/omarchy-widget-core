@@ -2,14 +2,14 @@
 
 The previous experimental architecture allowed arbitrary package dimensions, discarded commands while the helper was busy, recreated widget windows after snapshots, had no per-editor save acknowledgement, used crash-stale directory locks, and delegated replacement to individual package installers.
 
-v0.0.2 addresses these with fixed families, logical snap coordinates, stable instance identities, serialized/coalesced operations, revisioned durable settings, kernel writer locks, and immutable package versions switched through an atomic registry document. It also moves widget execution into a separate supervised Quickshell process.
+v0.0.2 addresses these with fixed families, logical cell coordinates, stable instance identities, serialized/coalesced operations, revisioned durable settings, kernel writer locks, and immutable package versions switched through an atomic registry document. It also moves widget execution into a separate supervised Quickshell process.
 
 Assumptions:
 
 - Widgets remain separate packages/repositories; Core is the shared runtime and manager.
 - One definition per package is sufficient now; the explicit definition ID is `main`.
 - Small, medium and large cover the initial product. No arbitrary free resizing.
-- A 16-point grid aligns placement; overlap is allowed. Automatic collision resolution is future work.
+- A 192-logical-unit cell grid validates occupancy by monitor and workspace. Invalid explicit placement fails; monitor changes use temporary fallback positions without overwriting preferences.
 - Settings objects are small (8 KiB); the registry is bounded to 1 MiB / 128 instances / 64 active packages.
 - Package code runs in separate Bubblewrap islands with scoped state access and filtered Wayland connections. This development boundary still requires security review and desktop acceptance; each package has a separate systemd resource budget, including its runner and proxy.
 - World Clock remains a single multi-city widget. Its own API 2 layout/editor migration is separate from this Core change.

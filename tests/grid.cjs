@@ -1,0 +1,16 @@
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const grid = vm.createContext({});
+vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../qml/Grid.js'),'utf8').replace('.pragma library',''),grid);
+const g={x:10,y:42,cell:192,gapX:10,gapY:10,columns:4,rows:3};
+const target=grid.target(212,244,'large','DP-1',1,g);
+assert.equal(target.column,1);assert.equal(target.row,1);
+assert.equal(grid.geometry('large',g).width,394);
+assert.equal(grid.valid(target,g,[]),true);
+assert.equal(grid.valid(target,g,[{...target,workspace:2}]),true);
+assert.equal(grid.valid(target,g,[{...target,workspace:null}]),false);
+assert.equal(grid.valid({...target,workspace:null},g,[{...target,workspace:2}]),false);
+assert.equal(grid.valid({...target,column:3},g,[]),false);
+assert.equal(grid.valid({...target,row:-1},g,[]),false);
+assert.equal(grid.valid(target,g,[{...target,monitor:'HDMI-A-1'}]),true);
+assert.equal(grid.geometry('medium',{...g,gapX:0}).width,384);
+console.log('PASS: cell preview, footprints, workspace conflicts, bounds, no gaps');

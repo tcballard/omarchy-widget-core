@@ -31,11 +31,12 @@ FocusScope {
             model: root.entries
             delegate: RowLayout {
                 required property var modelData
-                width: ListView.view.width; height: Style.space(100)
+                width: ListView.view.width; height: Style.space(124)
                 ColumnLayout {
                     Layout.fillWidth: true
                     Label { text: modelData.manifest.name; font.bold: true; Layout.fillWidth: true }
                     Label { text: modelData.manifest.version + " · " + modelData.manifest.id; color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.fillWidth: true }
+                    Label { text: "Unplaced — no available cells or desktop geometry"; visible:!!modelData.placement && modelData.placement.enabled && !modelData.effective; color:Color.urgent; font.pixelSize:Style.font.bodySmall; Layout.fillWidth:true }
                     RowLayout {
                         visible:!!modelData.placement
                         Label { text:"Workspace"; color:Color.muted; font.pixelSize:Style.font.bodySmall }

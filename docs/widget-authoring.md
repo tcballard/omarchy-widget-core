@@ -5,7 +5,7 @@ Applies to new API 2 widgets targeting experimental Core v0.0.2. The [API contra
 ## Enforced platform rules
 
 - A separate package with a stable reverse-domain ID, versioned widget.json, a QML view and optionally a QML settings editor. One definition per package, multiple independent desktop instances.
-- Declare supported small/medium/large families. Core owns their frame geometry, padding, positioning, workspace assignment and 16-unit placement grid. Current logical outer sizes are 192×192, 400×192 and 400×400; usable content is smaller and theme-scaled.
+- Declare supported small/medium/large families. Core owns their frame geometry, padding, positioning, workspace assignment and cell occupancy. Footprints are 1×1, 2×1 and 2×2 on 192-logical-unit cells; inherited gaps determine the final dimensions. Usable content is smaller and typography/padding remain theme-scaled.
 - Use widgetContext for acknowledged settings, identity, active state, theme/metrics and opening settings. Use settingsContext.draftSettings for the editor. Core mediates durable state and revision checks.
 - Packages are bounded to 256 files / 8 MiB and settings to 8 KiB. Structural validation rejects unsafe paths and unsupported contracts; it does not review application logic.
 - Package processes run behind Core's sandbox, broker, Wayland filter and resource limits. No direct network, home directory, cross-package state or raw compositor access. Same-package instances share a process and security boundary.
@@ -31,6 +31,6 @@ Before declaring desktop support, verify the real package through Core on Omarch
 
 Network support is proposed in [network-widgets.md](network-widgets.md), not currently available. It should add named, permissioned data resources, bounded refresh and cache/stale metadata through Core. Widget authors must not bypass the existing isolation to fetch data.
 
-## Planned cell-grid extension
+## Cell-grid layout
 
-The accepted [cell-grid design](grid-layout.md) replaces coordinate snapping with occupied footprints and inherits desktop gaps/rounding through Core. It is not implemented yet. Authors should keep layouts responsive to the actual content rectangle and avoid introducing their own exterior spacing.
+The implemented [cell-grid layout](grid-layout.md) uses occupied footprints and inherits global desktop gaps/borders/rounding through Core. Authors should keep layouts responsive to the actual content rectangle and avoid introducing their own exterior spacing.
