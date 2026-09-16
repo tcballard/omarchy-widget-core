@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import qs.Commons
 import "qml" as Core
 import "qml/Grid.js" as Grid
+import "qml/Workspace.js" as Workspace
 
 Item {
     id: root
@@ -14,6 +15,7 @@ Item {
     readonly property bool managerRole: Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"
     property string editSerial: ""
     property var installed: []
+    property var desktop: ({available:false,monitors:{}})
     property var themeAppearance: ({})
     property string error: ""
     property bool shown: true
@@ -65,7 +67,9 @@ Item {
             if(!success) return;
             if(request.args[0] === "list") {
                 if(response.api !== 2 || !Array.isArray(response.installed)) { root.error="Unsupported Core response"; return; }
-                root.installed=response.installed;
+                // Preserve delegate focus and in-progress manager edits during polling.
+                if(JSON.stringify(root.installed)!==JSON.stringify(response.installed)) root.installed=response.installed;
+                root.desktop=response.desktop || ({available:false,monitors:{}});
                 if(response.runtime) {
                     root.shown=response.runtime.shown !== false;
                     root.editing=response.runtime.editing === true;
@@ -115,6 +119,8 @@ Item {
         Core.Manager {
             anchors.fill: parent
             entries: root.installed
+            workspaceError: root.desktop.error || ""
+            onWorkspaceRequested: function(id,workspace) { root.execute(["workspace",id,workspace]); }
             busy: operation.busy
             error: root.error
             onConfigureRequested: function(id) { root.control("close-manager");root.managerOpen=false;root.configure(id); }
@@ -205,7 +211,7 @@ Item {
             WlrLayershell.keyboardFocus: root.editing || context.inputRequested ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
             // No compositor command socket is exposed to the sandbox.
             // Bottom-layer surfaces remain behind fullscreen windows.
-            visible: root.shown && screen !== null
+            visible: root.shown && screen !== null && Workspace.visible(config.workspace, screen ? screen.name : "", root.desktop)
             function place(size, monitorName) {
                 return root.execute(["place", modelData, JSON.stringify({x:margins.left/scale,y:margins.top/scale,monitor:monitorName,size:size})]);
             }

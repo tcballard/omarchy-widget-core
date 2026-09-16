@@ -1,5 +1,6 @@
 mod island;
 mod resources;
+mod workspaces;
 use serde_json::{json, Value};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::{
@@ -308,6 +309,7 @@ impl Registry {
                     .all(|k| p[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n)))
                 || !p["monitor"].as_str().is_some_and(|s| s.len() <= 120)
                 || !p["size"].is_string()
+                || !workspaces::valid(&p["workspace"])
             {
                 return Err("Invalid placement; layout preserved".into());
             }
@@ -478,7 +480,7 @@ impl Registry {
             }
         }
         Ok(
-            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"]}),
+            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"],"desktop":if l["placements"].as_object().unwrap().values().any(|p| !p["workspace"].is_null()) { workspaces::snapshot() } else { json!({"available":true,"monitors":{}}) }}),
         )
     }
     fn install(&self, source: &Path) -> Result<Value> {
@@ -590,6 +592,20 @@ impl Registry {
         match operation {
             "add" | "duplicate" => p["enabled"] = json!(true),
             "hide" => p["enabled"] = json!(false),
+            "workspace" => {
+                let raw = value.ok_or("Missing workspace: use all or 1–9999")?;
+                let assignment = if raw == "all" {
+                    Value::Null
+                } else {
+                    json!(raw
+                        .parse::<u64>()
+                        .map_err(|_| "Workspace must be all or 1–9999")?)
+                };
+                if !workspaces::valid(&assignment) {
+                    return Err("Workspace must be all or 1–9999".into());
+                }
+                p["workspace"] = assignment;
+            }
             "configure" | "save" => {
                 let raw = value.ok_or("Missing settings")?;
                 if raw.len() > 16384 {
@@ -709,14 +725,14 @@ fn run(args: &[String]) -> Result<Value> {
 
     if cmd == "help" {
         return Ok(
-            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
         "list" => 1,
         "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide"
         | "remove" | "control" => 2,
-        "place" | "configure" | "save" => 3,
+        "place" | "configure" | "save" | "workspace" => 3,
         _ => return Err("Unknown command".into()),
     };
     if args.len() != required {
@@ -775,6 +791,42 @@ mod tests {
         fs::create_dir_all(p).unwrap();
         fs::write(p.join("View.qml"), "import QtQuick\nItem {}\n").unwrap();
         fs::write(p.join("widget.json"),json!({"schemaVersion":1,"kind":"desktop-widget","coreApi":1,"id":"io.example.test","name":"Contract fixture","version":"0.1.0","entryPoint":"View.qml","defaultSize":"standard","sizes":{"standard":{"width":300,"height":200}},"defaults":{}}).to_string()).unwrap();
+    }
+    #[test]
+    fn workspace_assignment_preserves_settings_and_layout() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        let before = r.layout().unwrap()["placements"]["io.example.test"].clone();
+        r.placement("io.example.test", "workspace", Some("2"))
+            .unwrap();
+        let after = r.layout().unwrap()["placements"]["io.example.test"].clone();
+        assert_eq!(after["workspace"], 2);
+        for key in [
+            "settings", "revision", "monitor", "x", "y", "size", "enabled",
+        ] {
+            assert_eq!(before[key], after[key]);
+        }
+        let duplicate = r.placement("io.example.test", "duplicate", None).unwrap();
+        assert_eq!(duplicate["placement"]["workspace"], 2);
+        for bad in ["0", "-1", "10000", "2.5", "two"] {
+            assert!(r
+                .placement("io.example.test", "workspace", Some(bad))
+                .is_err());
+            assert_eq!(
+                r.layout().unwrap()["placements"]["io.example.test"]["workspace"],
+                2
+            );
+        }
+        r.placement("io.example.test", "workspace", Some("all"))
+            .unwrap();
+        assert!(r.layout().unwrap()["placements"]["io.example.test"]["workspace"].is_null());
     }
     #[test]
     fn rejects_unsafe_paths() {

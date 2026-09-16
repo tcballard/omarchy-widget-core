@@ -103,7 +103,7 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
             }
             Ok(json!(true))
         }
-        Some(op @ ("save" | "place" | "hide")) => {
+        Some(op @ ("save" | "place" | "hide" | "workspace")) => {
             let expected = if op == "hide" { 2 } else { 3 };
             if args.len() != expected || layout["placements"][&args[1]]["packageId"] != package {
                 return Err("Instance is outside this runner's authority".into());
@@ -438,6 +438,7 @@ mod tests {
         for args in [
             vec!["save", "io.test.b", r#"{"revision":0,"settings":{}}"#],
             vec!["hide", "io.test.b"],
+            vec!["workspace", "io.test.b", "2"],
             vec!["remove", "io.test.a"],
             vec!["install", "/widget"],
             vec!["configure", "io.test.a", "{}"],

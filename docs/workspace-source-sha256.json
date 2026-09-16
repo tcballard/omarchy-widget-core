@@ -1,0 +1,15 @@
+{
+  "src/main.rs": "28bac05b723b9bf691b887178c2f4ee3ff4254807cd9dd29fe31159d9c861aac",
+  "src/island.rs": "a41704fae108aa84a30b7bfb5b7b08b97522ac9949aa366a514403eb7ee4e2e4",
+  "src/workspaces.rs": "b76ce3cdb2bc8ba702be4be523f88b6d8e57f2a2fe57d05bf97feded9192ba4b",
+  "Host.qml": "5893090de219b3f05300d39e70d2ebf5be9b7ba7b847dbfdab895629a2f6a7c9",
+  "qml/Manager.qml": "2a84fdeea7e24a87789ac607371d7f23bc5dc7c5801a82d2e08a16c7ab883a9d",
+  "qml/Workspace.js": "e49bb1273016a2d74775f20dea659a51aed40f44f666ab96d71ae3a1ab40baf7",
+  "widget": "734ae4dc23f2aab4d991f8338b412e451d74cdf3b45de246298f4df67a57f535",
+  "bind-key": "587f0d10297512f21d5475851db16ba1674da385da5d9d23b7367cef92e8ec09",
+  "install-local": "8d809ad62bd6c3b43344f19f2cfa84df7c47f9132aeaeea9f526474e2016392b",
+  "tests/qml_smoke.py": "3d78aea5d222e4d79726824f9d8e71bce00e6bdf010dbecebb6baf23c6251338",
+  "tests/workspace.cjs": "5197d5766d310b54f5ccfad9725dbe3fd8f8abd042961bc6b3ce9e41689c8e1c",
+  "tests/keybinding.py": "d1c13fe039a43161d2935a61b7074f13b179e69ae2f5bde4708931345c3bf40e",
+  ".github/workflows/check.yml": "6eec57d8e99166845017af4152bd9a887b4271e6cb176cab6ae977d9bd81eea7"
+}

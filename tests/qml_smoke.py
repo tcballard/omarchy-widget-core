@@ -32,9 +32,11 @@ Window {
         id: manager; objectName: "manager"; anchors.fill: parent
         onCloseRequested: closed = true
         property bool closed: false
+        property string requestedWorkspace:""
+        onWorkspaceRequested:function(id,workspace){requestedWorkspace=id+":"+workspace;}
     }
     function populate() {
-        manager.entries = [{manifest:{id:"io.example.fixture",name:"Contract fixture",version:"0.1.0"},placement:null}]
+        manager.entries = [{manifest:{id:"io.example.fixture",name:"Contract fixture",version:"0.1.0"},instanceId:"io.example.fixture",placement:{enabled:true,workspace:2}}]
     }
     Core.WidgetFrame {
         id:frame; objectName:"frame"; anchors.fill:parent; anchors.margins:20; visible:false
@@ -67,6 +69,23 @@ Window {
             assert manager is not None
             QMetaObject.invokeMethod(window, "populate")
             app.processEvents()
+            QTest.qWait(100)
+            def find_item(item,name):
+                if item.objectName()==name:return item
+                for child in item.childItems():
+                    match=find_item(child,name)
+                    if match is not None:return match
+            field=find_item(window.contentItem(),"workspace-input")
+            assert field is not None and field.property("text")=="2"
+            field.setProperty("text","3")
+            QMetaObject.invokeMethod(field,"accepted")
+            assert manager.property("requestedWorkspace")=="io.example.fixture:3"
+            field.setProperty("text","all")
+            QMetaObject.invokeMethod(field,"accepted")
+            assert manager.property("requestedWorkspace")=="io.example.fixture:all"
+            field.setProperty("text","0")
+            assert not field.property("acceptableInput")
+            field.setProperty("text","2")
             QMetaObject.invokeMethod(manager, "forceActiveFocus")
             QTest.keyClick(window, Qt.Key.Key_Escape)
             assert manager.property("closed"), "Escape did not close manager"

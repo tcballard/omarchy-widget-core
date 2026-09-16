@@ -45,3 +45,9 @@ User fonts outside `/usr` are not mounted. Live Hyprland rendering, scaling, mon
 ## Design sources
 
 The shared cards, edit affordances and snap grid in [omarchy-desktop-widgets](https://github.com/cyelis1224/omarchy-desktop-widgets) informed the design; Core implements them independently. Its in-shell widget loading is not used here. Apple's widget guidance informs the fixed families; this is not WidgetKit or a claim of equivalent security.
+
+## Workspace tracking extension
+
+Trusted Core now performs a fixed `j/monitors` query through Hyprland's Unix control socket. It imports `HYPRLAND_INSTANCE_SIGNATURE` alongside the existing desktop routing variables. Widget sandboxes still receive no control socket or session signature. Only bounded output names and active workspace IDs are included in snapshots; query responses have a 64 KiB cap, a 100 ms read deadline and a 250 ms shared cache. Missing/malformed/unavailable data hides pinned widgets. This does not add fullscreen detection or expand allowed Wayland protocols.
+
+The workspace restriction is enforced by the cooperative Core host's visibility/Loader logic, not by the Wayland proxy. A hostile package is not prevented from creating another permitted bottom-layer surface. The broker separately prevents cross-package assignment changes.

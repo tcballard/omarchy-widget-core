@@ -32,7 +32,10 @@ for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE'
         destination.mkdir(parents=True);(destination/'previous').write_text('old core')
         unit=home/'.config/systemd/user/omarchy-widget-host.service';unit.parent.mkdir(parents=True);unit.write_text('old unit')
         launcher=home/'.local/bin/omarchy-widget';launcher.parent.mkdir(parents=True);launcher.write_text('old launcher')
+        desktop=home/'.local/share/applications/io.github.tcballard.widget-core.desktop'
+        desktop.parent.mkdir(parents=True);desktop.write_text('old desktop entry')
         env={**os.environ,'HOME':str(home),'PATH':str(commands)+':'+os.environ['PATH']}
+        env.pop('XDG_DATA_HOME',None)
         if failure:env[failure]='1'
         result=subprocess.run(['bash',str(repo/'install-local'),'--update'],env=env,text=True,capture_output=True,cwd=repo)
         if failure:
@@ -40,9 +43,12 @@ for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE'
             assert (destination/'previous').read_text()=='old core'
             assert unit.read_text()=='old unit'
             assert launcher.read_text()=='old launcher'
+            assert desktop.read_text()=='old desktop entry'
         else:
             assert result.returncode==0,result.stderr
             assert (destination/'Host.qml').is_file()
+            assert 'Name=Widgets\n' in desktop.read_text()
+            assert 'Exec=omarchy-widget manage\n' in desktop.read_text()
             assert (destination/'Commons/Color.qml').is_file()
             assert 'KillMode=control-group' in unit.read_text()
             assert 'No widget code' in (destination/'Service.qml').read_text()

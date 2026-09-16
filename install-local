@@ -31,6 +31,12 @@ launcher_path="$HOME/.local/bin/omarchy-widget"
 launcher_backup=$(mktemp)
 had_launcher=false
 if [[ -f "$launcher_path" ]]; then cp -- "$launcher_path" "$launcher_backup";had_launcher=true;fi
+desktop_data="${XDG_DATA_HOME:-$HOME/.local/share}"
+[[ "$desktop_data" == /* ]] || desktop_data="$HOME/.local/share"
+desktop_path="$desktop_data/applications/io.github.tcballard.widget-core.desktop"
+desktop_backup=$(mktemp)
+had_desktop=false
+if [[ -f "$desktop_path" ]]; then cp -- "$desktop_path" "$desktop_backup";had_desktop=true;fi
 activated=false
 cleanup() {
   result=$?
@@ -39,6 +45,7 @@ cleanup() {
     systemctl --user stop omarchy-widget-host.service >/dev/null 2>&1 || true
     if [[ "$had_unit" == true ]]; then cp -- "$unit_backup" "$unit_path";else rm -f -- "$unit_path";fi
     if [[ "$had_launcher" == true ]]; then install -m755 "$launcher_backup" "$launcher_path";else rm -f -- "$launcher_path";fi
+    if [[ "$had_desktop" == true ]]; then cp -- "$desktop_backup" "$desktop_path";else rm -f -- "$desktop_path";fi
     systemctl --user daemon-reload >/dev/null 2>&1 || true
     omarchy plugin disable "$core_id" >/dev/null 2>&1 || true
     failed=$(mktemp -d "$(dirname -- "$destination")/.widget-core-failed.XXXXXXXX")
@@ -50,10 +57,11 @@ cleanup() {
     fi
     echo "Core activation failed; previous installation restored. Failed copy: $failed/core" >&2
   fi
-  rm -f -- "$unit_backup" "$launcher_backup"
+  rm -f -- "$unit_backup" "$launcher_backup" "$desktop_backup"
 }
 trap cleanup EXIT
-cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/host-launch" "$root/sandbox-launch" "$root/wayland-filter.toml" "$root/LICENSE" "$stage/"
+[[ ! -L "$desktop_path" ]] || { echo 'Refusing symlink desktop entry.' >&2; exit 1; }
+cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/bind-key" "$root/host-launch" "$root/sandbox-launch" "$root/wayland-filter.toml" "$root/LICENSE" "$stage/"
 cp -R -- "$root/qml" "$root/Commons" "$root/Ui" "$stage/"
 mkdir "$stage/bin"
 install -m755 "$root/wayland-policy" "$stage/wayland-policy"
@@ -75,6 +83,8 @@ for ((attempt=0;attempt<40;attempt++)); do
   if omarchy plugin list --json | jq -e --arg id "$core_id" 'any(.[]; .id==$id)' >/dev/null; then
     omarchy plugin enable "$core_id"
     install -m755 "$root/widget" "$HOME/.local/bin/omarchy-widget"
+    mkdir -p "$(dirname -- "$desktop_path")"
+    install -m644 "$root/io.github.tcballard.widget-core.desktop" "$desktop_path"
     mkdir -p "$HOME/.config/systemd/user"
     cat > "$HOME/.config/systemd/user/omarchy-widget-host.service" <<'UNIT'
 [Unit]
@@ -103,7 +113,10 @@ UNIT
     bash "$destination/widget" start
     echo 'Core v0.0.2 installed with a separate widget host. Restart the shell once to replace the old in-process service: omarchy restart shell'
     echo 'After migration, only widgets need restarting: omarchy-widget restart'
-    echo "Open manager: omarchy-shell $core_id manage"
+    echo "Open manager: Super+Space → Widgets, or omarchy-widget manage"
+    if ! bash "$destination/bind-key"; then
+      echo 'Core is installed. Configure the shortcut later with: omarchy-widget bind-key'
+    fi
     exit 0
   fi
   sleep 0.1
