@@ -57,9 +57,9 @@ fn manifest(dir: &Path) -> Result<Value> {
     let mut v = read_json(&dir.join("widget.json"), 16384)?;
     if v["kind"] != "desktop-widget"
         || !((v["schemaVersion"] == 1 && v["coreApi"] == 1)
-            || (v["schemaVersion"] == 2 && v["coreApi"] == 2))
+            || (v["schemaVersion"] == 2 && (v["coreApi"] == 2 || v["coreApi"] == 3)))
     {
-        return Err("Requires desktop-widget schema/coreApi 1 or 2".into());
+        return Err("Requires desktop-widget schema 1/API 1 or schema 2/API 2–3; upgrade Core for newer APIs".into());
     }
     if !id_ok(v["id"].as_str().unwrap_or(""))
         || !v["name"]
@@ -186,6 +186,32 @@ fn manifest(dir: &Path) -> Result<Value> {
         }
         if refresh == "weather" && !weather::declared(&v) {
             return Err("Weather refresh requires weather capability".into());
+        }
+    }
+    if let Some(features) = v.get("requires") {
+        if v["coreApi"] != 3 {
+            return Err("Required features need Core API 3".into());
+        }
+        let features = features
+            .as_array()
+            .filter(|a| a.len() <= 8)
+            .ok_or("requires must be a bounded feature array")?;
+        for feature in features {
+            if ![
+                "settings-schema",
+                "settings-migrations",
+                "acknowledged-actions",
+                "shared-weather",
+                "frame-settings",
+                "command-dependencies",
+            ]
+            .iter()
+            .any(|s| feature == s)
+            {
+                return Err(format!(
+                    "Unsupported required feature: {feature}; upgrade Core"
+                ));
+            }
         }
     }
     settings::contract(&v)?;
@@ -464,7 +490,10 @@ impl Registry {
         palette
     }
     fn request_edit(&self, id: &str) -> Result<Value> {
-        let _lock = self.lock()?;
+        let lock = self.lock()?;
+        self.request_edit_locked(id, &lock)
+    }
+    fn request_edit_locked(&self, id: &str, _lock: &File) -> Result<Value> {
         let mut l = self.layout()?;
         if !l["placements"][id].is_object() {
             return Err("Add the widget before editing it".into());
@@ -490,7 +519,10 @@ impl Registry {
         Ok(json!(true))
     }
     fn finish_edit(&self, id: &str, serial: &str) -> Result<Value> {
-        let _lock = self.lock()?;
+        let lock = self.lock()?;
+        self.finish_edit_locked(id, serial, &lock)
+    }
+    fn finish_edit_locked(&self, id: &str, serial: &str, _lock: &File) -> Result<Value> {
         let mut l = self.layout()?;
         if l["runtime"]["edit"]["instance"] == id
             && l["runtime"]["edit"]["serial"]
@@ -532,7 +564,10 @@ impl Registry {
         Ok(json!(true))
     }
     fn control(&self, method: &str) -> Result<Value> {
-        let _lock = self.lock()?;
+        let lock = self.lock()?;
+        self.control_locked(method, &lock)
+    }
+    fn control_locked(&self, method: &str, _lock: &File) -> Result<Value> {
         let mut l = self.layout()?;
         let mut runtime = l["runtime"].clone();
         if !runtime.is_object() {
@@ -633,7 +668,7 @@ impl Registry {
                         .filter(|p| p["packageId"] == id)
                         .count();
                     catalog.push(
-                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count,"weatherAllowed":weather::authorised(self,&l,&id),"packageDisabled":l["runtime"]["packageControls"][&id]["disabled"]==true,"health":if health_fresh {health["packages"][&id].clone()} else {Value::Null}}),
+                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count,"weatherAllowed":weather::authorised(self,&l,&id),"packageDisabled":l["runtime"]["packageControls"][&id]["disabled"]==true,"loadFailure":l["runtime"]["packageControls"][&id]["loadFailure"]==true,"health":if health_fresh {health["packages"][&id].clone()} else {Value::Null}}),
                     );
                     let mut found = false;
                     for (instance, p) in l["placements"].as_object().unwrap() {
@@ -670,6 +705,14 @@ impl Registry {
         self.deploy(source, false)
     }
     fn deploy(&self, source: &Path, update: bool) -> Result<Value> {
+        self.deploy_observing(source, update, |_| Ok(()))
+    }
+    fn deploy_observing(
+        &self,
+        source: &Path,
+        update: bool,
+        phase: impl Fn(&str) -> Result<()>,
+    ) -> Result<Value> {
         let _lock = self.lock()?;
         let m = validate(source)?;
         let id = m["id"].as_str().unwrap();
@@ -725,12 +768,24 @@ impl Registry {
                 let to = stage.join(&p);
                 fs::create_dir_all(to.parent().unwrap()).map_err(err)?;
                 fs::copy(source.join(&p), &to).map_err(err)?;
-                fs::set_permissions(&to, fs::Permissions::from_mode(0o600)).map_err(err)?;
+                // Only owner execute survives; never propagate setuid/setgid or group/world modes.
+                let executable = fs::metadata(source.join(&p))
+                    .map_err(err)?
+                    .permissions()
+                    .mode()
+                    & 0o100
+                    != 0;
+                fs::set_permissions(
+                    &to,
+                    fs::Permissions::from_mode(if executable { 0o700 } else { 0o600 }),
+                )
+                .map_err(err)?;
                 File::open(&to).map_err(err)?.sync_all().map_err(err)?;
             }
             if validate(&stage)? != m {
                 return Err("Package changed during staging; retry the update".into());
             }
+            phase("staged")?;
             sync_tree(&stage)?;
             File::open(stage.parent().unwrap())
                 .map_err(err)?
@@ -749,7 +804,9 @@ impl Registry {
                 .and_then(|p| p.strip_prefix(&self.data).ok())
                 .map(|p| p.to_string_lossy().to_string());
             l["packages"][id] = json!({"current":relative,"previous":previous,"checkpoint":{"before":before,"after":after}});
+            phase("before-commit")?;
             self.commit(&mut l)?;
+            phase("committed")?;
             Ok(
                 json!({"installed":id,"updated":update,"revision":l["revision"],"restartRequired":true}),
             )
@@ -757,6 +814,52 @@ impl Registry {
         // An unreferenced version is harmless after a crash. Do not delete here:
         // a directory-fsync error can occur after the pointer commit succeeds.
         result
+    }
+    fn export_settings(&self, id: &str) -> Result<Value> {
+        let _lock = self.lock()?;
+        let l = self.layout()?;
+        let m = manifest(&self.source(&l, id)?)?;
+        let file = self
+            .state
+            .join("exports")
+            .join(format!("{id}-{}.json", nonce()));
+        fs::create_dir_all(file.parent().unwrap()).map_err(err)?;
+        let value = json!({"format":1,"packageId":id,"packageVersion":m["version"],"generation":l["packages"][id]["current"],"registryRevision":l["revision"],"instances":settings::checkpoint(&l["placements"],id)});
+        atomic_json(&file, &value)?;
+        Ok(json!({"exported":file,"message":format!("Settings exported to {}",file.display())}))
+    }
+    fn restore_settings(&self, id: &str, file: &Path) -> Result<Value> {
+        let _lock = self.lock()?;
+        let value = read_json(file, 1024 * 1024)?;
+        if value["format"] != 1 || value["packageId"] != id || !value["instances"].is_object() {
+            return Err("Invalid settings export or package identity".into());
+        }
+        let mut l = self.layout()?;
+        self.ensure_no_editor(&l, id)?;
+        let m = manifest(&self.source(&l, id)?)?;
+        for (instance, saved) in value["instances"].as_object().unwrap() {
+            let p = &mut l["placements"][instance];
+            if p["packageId"] != id {
+                return Err(
+                    "Export contains a removed or foreign instance; current settings preserved"
+                        .into(),
+                );
+            }
+            let migrated = settings::migrate(
+                &m,
+                saved["settingsVersion"].as_u64().unwrap_or(1),
+                &saved["settings"],
+            )?;
+            p["settings"] = migrated;
+            p["settingsVersion"] = json!(settings::version(&m));
+            p["revision"] = json!(p["revision"]
+                .as_u64()
+                .unwrap()
+                .checked_add(1)
+                .ok_or("Revision exhausted")?);
+        }
+        self.commit(&mut l)?;
+        Ok(json!({"restored":id,"revision":l["revision"]}))
     }
     fn rollback(&self, id: &str) -> Result<Value> {
         let _lock = self.lock()?;
@@ -788,7 +891,7 @@ impl Registry {
                 if before[instance] != checkpoint["after"][instance]
                     || !checkpoint["before"][instance].is_object()
                 {
-                    return Err("Settings changed after update; rollback would overwrite them. Export settings and install a compatible package.".into());
+                    return Err("Settings changed after update; rollback would overwrite them. Use Export settings in Available, then install a compatible package. Your current code and settings are unchanged.".into());
                 }
                 p["settings"] = checkpoint["before"][instance]["settings"].clone();
                 p["settingsVersion"] = checkpoint["before"][instance]["settingsVersion"].clone();
@@ -817,13 +920,23 @@ impl Registry {
         value: Option<&str>,
         desktop: impl FnOnce() -> Value,
     ) -> Result<Value> {
-        let _lock = self.lock()?;
+        let lock = self.lock()?;
+        self.placement_locked(id, operation, value, desktop, &lock)
+    }
+    fn placement_locked(
+        &self,
+        id: &str,
+        operation: &str,
+        value: Option<&str>,
+        desktop: impl FnOnce() -> Value,
+        _lock: &File,
+    ) -> Result<Value> {
         if !id_ok(id) {
             return Err("Invalid instance ID".into());
         }
         let mut l = self.layout()?;
         let desktop = desktop();
-        if l["placements"][id].is_null() && operation == "save" {
+        if l["placements"][id].is_null() && !["add", "create"].contains(&operation) {
             return Err("Unknown widget instance; add it before changing it".into());
         }
         grid::migrate(&mut l["placements"], &desktop);
@@ -915,6 +1028,44 @@ impl Registry {
                     .unwrap()
                     .checked_add(1)
                     .ok_or("Revision exhausted")?);
+            }
+            "recover-placement" => {
+                let raw = value.ok_or("Choose a size and monitor")?;
+                if raw.len() > 1024 {
+                    return Err("Placement too large".into());
+                }
+                let v: Value = serde_json::from_str(raw).map_err(err)?;
+                let size = family(v["size"].as_str().unwrap_or(""))?;
+                if !m["families"].as_array().unwrap().contains(&json!(size)) {
+                    return Err("Unsupported widget family".into());
+                }
+                let monitor = v["monitor"]
+                    .as_str()
+                    .ok_or("Choose Automatic or an available monitor")?;
+                let mut candidate = p.clone();
+                candidate["size"] = json!(size);
+                let grids = desktop["grids"]
+                    .as_object()
+                    .ok_or("Desktop unavailable; retry when connected")?;
+                let mut target = None;
+                'search: for (name, g) in grids {
+                    if !monitor.is_empty() && monitor != name {
+                        continue;
+                    }
+                    for row in 0..g["rows"].as_u64().unwrap_or(0) {
+                        for column in 0..g["columns"].as_u64().unwrap_or(0) {
+                            candidate["monitor"] = json!(name);
+                            candidate["cell"] = json!({"column":column,"row":row});
+                            if grid::validate_change(&instance, &candidate, &current, &desktop)
+                                .is_ok()
+                            {
+                                target = Some(candidate.clone());
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+                *p=target.ok_or("No free cells for that size on the selected monitor. Choose a smaller size or another monitor.")?;
             }
             "place" => {
                 let raw = value.ok_or("Missing placement")?;
@@ -1087,14 +1238,15 @@ fn run(args: &[String]) -> Result<Value> {
     }
     if cmd == "help" {
         return Ok(
-            json!({"commands":["new PATH ID NAME","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
         "list" => 1,
         "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide"
-        | "remove" | "remove-instance" | "control" => 2,
-        "place" | "configure" | "save" | "workspace" | "create" | "uninstall" => 3,
+        | "remove" | "remove-instance" | "control" | "export-settings" => 2,
+        "place" | "configure" | "save" | "workspace" | "create" | "uninstall"
+        | "recover-placement" | "restore-settings" => 3,
         _ => return Err("Unknown command".into()),
     };
     if args.len() != required {
@@ -1110,6 +1262,8 @@ fn run(args: &[String]) -> Result<Value> {
         "install" => r.install(Path::new(&args[1])),
         "update" => r.deploy(Path::new(&args[1]), true),
         "rollback" => r.rollback(&args[1]),
+        "export-settings" => r.export_settings(&args[1]),
+        "restore-settings" => r.restore_settings(&args[1], Path::new(&args[2])),
         "remove" => r.remove(&args[1]),
         "remove-instance" => r.remove_instance(&args[1]),
         "uninstall" => r.uninstall(&args[1], &args[2]),
@@ -1155,6 +1309,218 @@ mod tests {
         fs::create_dir_all(p).unwrap();
         fs::write(p.join("View.qml"), "import QtQuick\nItem {}\n").unwrap();
         fs::write(p.join("widget.json"),json!({"schemaVersion":1,"kind":"desktop-widget","coreApi":1,"id":"io.example.test","name":"Contract fixture","version":"0.1.0","entryPoint":"View.qml","defaultSize":"standard","sizes":{"standard":{"width":300,"height":200}},"defaults":{}}).to_string()).unwrap();
+    }
+    #[test]
+    fn deleted_instances_reject_every_stale_mutation_without_writes() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        let fresh = r
+            .placement("io.example.test", "create", Some("medium"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        r.placement("io.example.test", "add", None).unwrap();
+        for id in ["io.example.test", fresh.as_str()] {
+            r.remove_instance(id).unwrap();
+            let before = fs::read(r.state.join("layout.json")).unwrap();
+            for (op, value) in [
+                ("hide", None),
+                ("save", Some(r#"{"revision":0,"settings":{}}"#)),
+                ("configure", Some("{}")),
+                ("workspace", Some("all")),
+                (
+                    "place",
+                    Some(r#"{"column":0,"row":0,"monitor":"DP-1","size":"medium"}"#),
+                ),
+                ("duplicate", None),
+            ] {
+                assert!(r.placement(id, op, value).is_err(), "{op}");
+                assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+            }
+            assert!(r.request_edit(id).is_err());
+        }
+    }
+    #[test]
+    fn installed_helpers_keep_only_owner_execute_through_update_and_rollback() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        fs::copy("/usr/bin/true", src.join("helper")).unwrap();
+        fs::set_permissions(src.join("helper"), fs::Permissions::from_mode(0o6755)).unwrap();
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        for phase in 0..3 {
+            if phase == 1 {
+                r.deploy(&src, true).unwrap();
+            }
+            if phase == 2 {
+                r.rollback("io.example.test").unwrap();
+            }
+            let path = r.source(&r.layout().unwrap(), "io.example.test").unwrap();
+            assert_eq!(
+                fs::metadata(path.join("helper"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o7777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(path.join("View.qml"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o7777,
+                0o600
+            );
+        }
+    }
+    #[test]
+    fn api_three_validates_required_features_and_rejects_future_contracts() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        sdk::scaffold(&src, "io.example.api", "API").unwrap();
+        let mut m = read_json(&src.join("widget.json"), 16384).unwrap();
+        assert_eq!(m["coreApi"], 3);
+        validate(&src).unwrap();
+        m["requires"] = json!(["unknown-feature"]);
+        atomic_json(&src.join("widget.json"), &m).unwrap();
+        assert!(validate(&src).is_err());
+        m["requires"] = json!([]);
+        m["coreApi"] = json!(4);
+        atomic_json(&src.join("widget.json"), &m).unwrap();
+        assert!(validate(&src).is_err());
+    }
+    #[test]
+    fn deployment_phase_failures_keep_matching_code_and_settings() {
+        for boundary in ["staged", "before-commit", "committed"] {
+            let t = Temp::new();
+            let src = t.0.join("source");
+            fixture(&src);
+            let r = Registry {
+                data: t.0.join("data"),
+                state: t.0.join("state"),
+            };
+            r.install(&src).unwrap();
+            r.placement("io.example.test", "add", None).unwrap();
+            let old = r.layout().unwrap();
+            let mut m = manifest(&src).unwrap();
+            m["version"] = json!("0.2.0");
+            m["settingsVersion"] = json!(2);
+            m["defaults"] = json!({"title":"new"});
+            m["migrations"] = json!([{"from":1,"to":2,"defaults":{"title":"new"}}]);
+            atomic_json(&src.join("widget.json"), &m).unwrap();
+            assert!(r
+                .deploy_observing(&src, true, |phase| if phase == boundary {
+                    Err("injected I/O failure".into())
+                } else {
+                    Ok(())
+                })
+                .is_err());
+            let after = r.layout().unwrap();
+            if boundary == "committed" {
+                assert_eq!(after["placements"]["io.example.test"]["settingsVersion"], 2);
+                assert_eq!(
+                    manifest(&r.source(&after, "io.example.test").unwrap()).unwrap()["version"],
+                    "0.2.0"
+                );
+            } else {
+                assert_eq!(after, old);
+            }
+        }
+    }
+    #[test]
+    fn export_restore_is_atomic_and_never_recreates_removed_instances() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        let export = r.export_settings("io.example.test").unwrap();
+        let file = Path::new(export["exported"].as_str().unwrap());
+        assert_eq!(
+            fs::metadata(file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        r.placement("io.example.test", "configure", Some(r#"{"changed":true}"#))
+            .unwrap();
+        r.restore_settings("io.example.test", file).unwrap();
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.test"]["settings"],
+            json!({})
+        );
+        r.remove_instance("io.example.test").unwrap();
+        let before = r.layout().unwrap();
+        assert!(r.restore_settings("io.example.test", file).is_err());
+        assert_eq!(before, r.layout().unwrap());
+    }
+    #[test]
+    fn manager_can_recover_customised_unplaced_large_instance() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        sdk::scaffold(&src, "io.example.test", "Test").unwrap();
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        let id = r
+            .placement("io.example.test", "create", Some("large"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        r.placement(
+            &id,
+            "configure",
+            Some(r#"{"title":"Mine","note":"Keep this"}"#),
+        )
+        .unwrap();
+        let mut desktop = grid::tests::desktop();
+        desktop["grids"]["DP-1"]["columns"] = json!(1);
+        desktop["grids"]["DP-1"]["rows"] = json!(1);
+        let before = r.layout().unwrap();
+        assert!(grid::resolve(&before["placements"], &desktop)[&id].is_null());
+        r.placement_using(
+            &id,
+            "recover-placement",
+            Some(r#"{"size":"small","monitor":""}"#),
+            || desktop.clone(),
+        )
+        .unwrap();
+        let after = r.layout().unwrap();
+        assert_eq!(
+            before["placements"][&id]["settings"],
+            after["placements"][&id]["settings"]
+        );
+        assert_eq!(
+            before["placements"][&id]["revision"],
+            after["placements"][&id]["revision"]
+        );
+        assert!(grid::resolve(&after["placements"], &desktop)[&id].is_object());
+        assert!(r
+            .placement_using(
+                &id,
+                "recover-placement",
+                Some(r#"{"size":"large","monitor":""}"#),
+                || desktop.clone()
+            )
+            .is_err());
+        assert_eq!(after, r.layout().unwrap());
     }
     #[test]
     fn manager_create_uses_defaults_and_duplicate_copies_only_its_source() {
@@ -1423,6 +1789,7 @@ mod tests {
             state: t.0.join("state"),
         };
         r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
         r.placement(
             "io.example.test",
             "configure",
@@ -1623,6 +1990,7 @@ mod tests {
             state: t.0.join("state"),
         };
         r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
         let ack = r
             .placement_using(
                 "io.example.test",

@@ -31,7 +31,7 @@ are harmless and not automatically deleted.
 restores the matching settings checkpoint when the schema changed. Later moves,
 hides and instance removals survive. Later settings edits or newly added instances
 with an incompatible schema cause rollback to fail with an explanation; it never
-silently overwrites them. Export the current `list` response and install a forward
+silently overwrites them. Use Available → Export settings (or `export-settings PACKAGE`) and install a forward
 compatible package in that case. A same-schema rollback keeps compatible edits.
 Rollback can be reversed again using the swapped checkpoint. Weather permission
 is revoked; code rollback does not revive an old grant.
@@ -63,3 +63,35 @@ Final integration: every gear/manager settings request registers with Core befor
 loading. Updates and rollback refuse while that package has an open editor.
 An explicit package restart/disable clears a stuck request and discards volatile
 drafts; use Save/Cancel first when the process is healthy.
+
+## Supported settings export and restore
+
+`omarchy-widget export-settings PACKAGE` takes the registry lock and writes a
+private JSON file under the state directory's `exports/`, returning its full path.
+It records package/generation/revision and all per-instance settings checkpoints.
+The manager's Available tab exposes this action and displays the saved path.
+
+`omarchy-widget restore-settings PACKAGE /absolute/path/to/export.json` is an
+explicit replacement of settings for matching existing instance IDs. Close any
+settings editor first. Every imported setting is migrated/validated against the
+currently installed package under the same lock; one invalid/removed/foreign ID
+rejects the entire restore. Revisions advance, while positions and hidden state
+remain unchanged. Removed instances are never recreated. Save another export
+before restoring edits you may want to retain. This is not cross-machine import.
+
+## Failure outcomes
+
+No automatic rollback is attempted after an author changes settings. Staging or
+precommit failure leaves the old code/settings pair; a failure after the atomic
+commit leaves the new pair. Retry `list` after an uncertain acknowledgement.
+The supervisor replaces the runner separately. Process failure follows the existing
+three-attempt budget. A content Loader error reports through its scoped broker,
+disables only that package and makes the manager show a stopped-content error.
+Settings stay available for export. Roll back or install a compatible version,
+then Enable package. A process that starts is not proof of healthy content.
+
+Restart/disable clears a crashed editor registration; it deliberately discards
+unacknowledged drafts. There is no automatic draft recovery promise. Regression
+tests cover injected staging/precommit/postcommit errors, migration refusal,
+restore refusal and explicit failed-content state. Actual power loss, disk-full,
+first-load presentation and supervisor replacement still require desktop tests.

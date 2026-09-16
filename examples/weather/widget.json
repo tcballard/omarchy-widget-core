@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "coreApi": 2,
+  "coreApi": 3,
   "kind": "desktop-widget",
   "id": "io.github.tcballard.weather-example",
   "name": "Weather example",
@@ -47,5 +47,11 @@
       "longitude"
     ],
     "additionalProperties": false
-  }
+  },
+  "requires": [
+    "acknowledged-actions",
+    "frame-settings",
+    "settings-schema",
+    "shared-weather"
+  ]
 }

@@ -1,0 +1,23 @@
+#!/usr/bin/bash
+# Arbitrary QML previews run without host networking, home, session bus or display.
+set -euo pipefail
+[[ $# == 2 ]] || { echo 'Usage: sdk/capture-package PACKAGE EMPTY_OUTPUT_DIR' >&2; exit 2; }
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+package=$(realpath -e -- "$1")
+[[ -d "$package" && -f "$package/widget.json" ]] || exit 2
+[[ -x /usr/bin/bwrap ]] || { echo 'Install bubblewrap and system python-pyside6 first.' >&2; exit 1; }
+/usr/bin/python3 -c 'import PySide6' || { echo 'System Python needs PySide6 (Arch: python-pyside6).' >&2; exit 1; }
+mkdir -p -- "$2"
+output=$(realpath -e -- "$2")
+[[ -z $(find "$output" -mindepth 1 -maxdepth 1 -print -quit) ]] || { echo 'Use an empty output directory.' >&2; exit 1; }
+args=(--unshare-all --die-with-parent --new-session --cap-drop ALL --clearenv
+ --ro-bind /usr /usr --ro-bind "$root" /core --ro-bind "$package" /widget --bind "$output" /output
+ --proc /proc --dev /dev --tmpfs /tmp --dir /etc --dir /run
+ --setenv HOME /tmp --setenv PATH /usr/bin --setenv LANG C.UTF-8
+ --setenv QT_QPA_PLATFORM offscreen --setenv QT_QUICK_BACKEND software)
+for item in bin sbin lib lib64; do
+ if [[ -L /$item ]]; then args+=(--symlink "$(readlink "/$item")" "/$item");
+ elif [[ -d /$item ]]; then args+=(--ro-bind "/$item" "/$item"); fi
+done
+for item in /etc/fonts /etc/ld.so.cache; do [[ ! -e $item ]] || args+=(--ro-bind "$item" "$item"); done
+exec /usr/bin/timeout --kill-after=2 30 /usr/bin/bwrap "${args[@]}" -- /usr/bin/python3 /core/sdk/render_previews.py /output --package /widget

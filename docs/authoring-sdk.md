@@ -1,9 +1,8 @@
 # Authoring a Widget Core package
 
-This SDK targets the experimental API 2 implementation in the seven-PR development
-stack. It is not a promise that an older build advertising API 2 implements every
-optional extension. Use the stack tip for development; a supported release awaits
-live desktop acceptance.
+This SDK targets API 3. Older hosts reject these packages before installation.
+See [compatibility.md](compatibility.md) for the declared runtime and evidence.
+Live desktop acceptance remains a release gate.
 
 ## Start and validate
 
@@ -52,13 +51,19 @@ real settings-heavy consumer. `examples/weather` exercises the data contract.
 ## Previews and verification
 
 `python3 sdk/render_previews.py OUTPUT_DIRECTORY` renders the **bundled starter**
-through the actual Core frame with fixed sample text, font, theme and family sizes.
-It requires PySide6 6.11.2. It never loads an arbitrary installed package. Output
+through the actual Core frame with manifest defaults, font, theme and family sizes.
+It requires PySide6 6.11.2. Use the sandbox wrapper below for your own package. Output
 is genuine offscreen Qt imagery, not evidence of a live Omarchy session. Font/Qt
 changes may alter pixels; use the pinned CI environment for repeatable output.
 
-For your own widget, capture your actual supported layouts in a controlled test
-profile and add `previews:{"small":"previews/small.png",...}`. Images must remain
+For your own widget, install system `python-pyside6` and `bubblewrap`, then run
+`bash sdk/capture-package ./my-widget ./empty-preview-output`. It renders your
+actual entry point and defaults inside a networkless Bubblewrap process with no
+home, session bus or compositor socket and only the empty output folder writable.
+It has a 30-second watchdog and fails closed when sandboxing is unavailable.
+Do not run the internal Python worker directly on third-party QML. Preview saves
+and networking are deliberately inactive; dynamic widgets may show empty states.
+Use a disposable Omarchy profile to capture live dynamic content. Add `previews:{"small":"previews/small.png",...}`. Images must remain
 inside the package, at most 512 KiB and 1024×1024. The manager never executes
 preview QML. If images are absent it presents a labelled footprint preview.
 Do not reuse the starter screenshots as images of a different widget.
@@ -75,3 +80,12 @@ upgrade/rollback, unplug/replug and runner restart. Include your license, depend
 requirements and actual tested Core/Qt/Omarchy versions. Keep migration fixtures
 from each supported settings version. Never claim compatibility from a manifest
 validation result alone.
+
+## Interactive reference
+
+`examples/countdown` implements Start, Pause and Resume using only the public
+revisioned action API. `python3 tests/countdown_integration.py
+ target/debug/omarchy-widget` exercises the real Host context and queue against
+Rust storage, two independent instances and the shared keyboard gear. The Clock
+integration additionally checks action-versus-editor conflicts. Preview rendering
+is not evidence for timer alarms during sleep; no background alarm service exists.

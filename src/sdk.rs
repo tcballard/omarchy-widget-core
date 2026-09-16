@@ -26,7 +26,7 @@ pub fn scaffold(path: &Path, id: &str, name: &str) -> Result<Value> {
             out.sync_all().map_err(err)?;
         }
         validate(path)?;
-        Ok(json!({"created":path,"id":id,"coreApi":2}))
+        Ok(json!({"created":path,"id":id,"coreApi":3}))
     })();
     // Preserve a partial scaffold on I/O failure; never recursively delete a user path.
     result

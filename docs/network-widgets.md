@@ -1,6 +1,6 @@
 # Public weather service
 
-API 2 optionally declares `capabilities:["weather"]` and `refresh:"weather"`.
+API 3 optionally declares `capabilities:["weather"]` and `refresh:"weather"`.
 The Widgets manager presents an Allow/Revoke action explaining that coordinates
 are sent to Open-Meteo. CLI: `weather-permission PACKAGE allow|deny`. Grants bind
 to the immutable installed generation and expire on update; the renderer cannot
@@ -25,7 +25,13 @@ request passes its own generation grant. It holds at most 128 locations, refresh
 after 15 minutes, deduplicates in-flight requests and starts at most one fetch
 per 10 seconds. DNS has a bounded process timeout; HTTPS has a 64-KiB limit and
 six-second watchdog. Failure retains data and backs off for one minute. Cached
-data is volatile across Core restart. The cache-full response is explicit.
+data is volatile across Core restart. Inactive and throttled misses allocate no
+slots. Each package can admit at most 16 locations and start one fetch per minute;
+non-pending least-recently-used entries are evicted within that budget or the global
+128-location cap. Cached public results remain shareable across packages. Pending
+entries are never evicted. TTL, admission and retry use Linux CLOCK_BOOTTIME,
+which includes suspend and ignores wall-clock corrections. Only `updatedAt` uses
+wall time; it must not be interpreted as the freshness clock.
 
 Hidden/workspace-inactive instances cannot start new fetches. Grant revocation,
 removal and generation changes deny subsequent reads; an already-started bounded
