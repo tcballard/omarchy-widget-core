@@ -3,7 +3,7 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 core_id=io.github.tcballard.widget-core
 destination="$HOME/.config/omarchy/plugins/$core_id"
-for command_name in cargo omarchy omarchy-shell jq qs systemctl bwrap; do
+for command_name in cargo omarchy omarchy-shell jq qs systemctl systemd-run timeout bwrap git; do
   command -v "$command_name" >/dev/null || { echo "Missing command: $command_name" >&2; exit 1; }
 done
 [[ $# -eq 0 || ( $# -eq 1 && "$1" == --update ) ]] || { echo 'Usage: bash install-local [--update]' >&2; exit 1; }
@@ -13,8 +13,12 @@ if [[ -e "$destination" && "${1:-}" != --update ]]; then
 fi
 # The 0.1.x → 0.0.2 reset is intentional; compare contracts, not version order.
 cargo build --manifest-path "$root/Cargo.toml" --locked --release
+bash "$root/build-wayland-filter"
 omarchy plugin validate "$root"
 "$root/target/release/omarchy-widget" list >/dev/null
+"$root/target/release/omarchy-widget" resource-preflight >/dev/null
+mkdir -p "$root/bin"
+install -m755 "$root/target/release/omarchy-widget" "$root/bin/omarchy-widget"
 bash "$root/sandbox-launch" check
 mkdir -p -- "$(dirname -- "$destination")" "$HOME/.local/bin"
 stage=$(mktemp -d "$(dirname -- "$destination")/.widget-core.XXXXXXXX")
@@ -49,9 +53,13 @@ cleanup() {
   rm -f -- "$unit_backup" "$launcher_backup"
 }
 trap cleanup EXIT
-cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/host-launch" "$root/sandbox-launch" "$root/LICENSE" "$stage/"
+cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/host-launch" "$root/sandbox-launch" "$root/wayland-filter.toml" "$root/LICENSE" "$stage/"
 cp -R -- "$root/qml" "$root/Commons" "$root/Ui" "$stage/"
 mkdir "$stage/bin"
+install -m755 "$root/wayland-policy" "$stage/wayland-policy"
+install -m755 "$root/target/wl-mitm-source/target/release/wl-mitm" "$stage/bin/wl-mitm"
+mkdir "$stage/wl-mitm-source"
+tar -C "$root/target/wl-mitm-source" --exclude=./target --exclude=./.git -cf - . | tar -C "$stage/wl-mitm-source" -xf -
 install -m755 "$root/target/release/omarchy-widget" "$stage/bin/omarchy-widget"
 if [[ -d "$destination" ]]; then
   systemctl --user stop omarchy-widget-host.service 2>/dev/null || true
@@ -84,7 +92,7 @@ TimeoutStopSec=5
 KillMode=control-group
 NoNewPrivileges=yes
 MemoryMax=512M
-TasksMax=64
+TasksMax=256
 CPUQuota=100%
 
 [Install]

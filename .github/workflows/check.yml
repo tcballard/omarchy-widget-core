@@ -38,3 +38,29 @@ jobs:
       - run: python3 tests/installer.py
       - run: python3 tests/sandbox.py
       - run: bash -n install-local && bash -n widget && bash -n host-launch && bash -n sandbox-launch
+  wayland:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked
+      - run: bash build-wayland-filter
+      - run: python3 tests/wayland_filter.py target/wl-mitm-source/target/release/wl-mitm target/debug/omarchy-widget
+  resources:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --locked
+      - name: Exercise resource isolation in a disposable user session
+        run: |
+          sudo useradd --create-home --shell /bin/bash widgettest
+          test_uid=$(id -u widgettest)
+          sudo mkdir -p "/run/systemd/system/user@${test_uid}.service.d"
+          printf '[Service]\nDelegate=cpu memory pids\n' | sudo tee "/run/systemd/system/user@${test_uid}.service.d/controllers.conf" >/dev/null
+          sudo systemctl daemon-reload
+          sudo loginctl enable-linger widgettest
+          sudo systemctl start "user@${test_uid}.service"
+          sudo install -Dm755 target/debug/omarchy-widget /tmp/widget-resource-ci/omarchy-widget
+          sudo install -m644 tests/resources.py /tmp/widget-resource-ci/resources.py
+          sudo -u widgettest env "XDG_RUNTIME_DIR=/run/user/${test_uid}" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${test_uid}/bus" python3 /tmp/widget-resource-ci/resources.py /tmp/widget-resource-ci/omarchy-widget --live

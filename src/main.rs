@@ -1,3 +1,5 @@
+mod island;
+mod resources;
 use serde_json::{json, Value};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::{
@@ -667,6 +669,44 @@ fn sync_tree(dir: &Path) -> Result<()> {
 }
 fn run(args: &[String]) -> Result<Value> {
     let cmd = args.first().map(String::as_str).unwrap_or("help");
+    if let Ok(socket) = env::var("OMARCHY_WIDGET_BROKER") {
+        return island::client(&socket, args);
+    }
+    if cmd == "wayland-policy" {
+        return island::wayland_policy(args, &env::var("WL_MITM_MSG_JSON").map_err(err)?);
+    }
+    if cmd == "resource-plan" && args.len() == 2 {
+        return Ok(json!(resources::service_args(&args[1])?));
+    }
+    if cmd == "resource-preflight" && args.len() == 1 {
+        return resources::preflight();
+    }
+    if cmd == "resource-check" && args.len() == 1 {
+        return resources::verify();
+    }
+    if cmd == "island-worker" && args.len() == 4 {
+        return resources::worker(
+            Path::new(&args[1]),
+            Path::new(&args[2]),
+            Path::new(&args[3]),
+        );
+    }
+    if cmd == "supervise" && args.len() == 2 {
+        return island::supervise(Path::new(&args[1]));
+    }
+    if cmd == "edit" && args.len() == 2 {
+        let r = Registry::from_env()?;
+        let _lock = r.lock()?;
+        let mut layout = r.layout()?;
+        if !layout["placements"][&args[1]].is_object() {
+            return Err("Add the widget before editing it".into());
+        }
+        layout["runtime"]["edit"] =
+            json!({"instance":args[1],"serial":layout["revision"].as_u64().unwrap_or(0)+1});
+        r.commit(&mut layout)?;
+        return Ok(json!(true));
+    }
+
     if cmd == "help" {
         return Ok(
             json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),

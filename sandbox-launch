@@ -1,52 +1,34 @@
 #!/usr/bin/bash
-# Shared-host policy. Never fall back to executing qs outside Bubblewrap.
+# Each runner sees one immutable package and two authority-limited sockets.
 set -euo pipefail
-mode=${1:-run}
-[[ $# -le 1 && "$mode" =~ ^(run|check)$ ]] || { echo 'Usage: sandbox-launch [run|check]' >&2;exit 2; }
+mode=${1:-check}
+[[ ( "$mode" == check && $# -le 1 ) || ( "$mode" == runner && $# -eq 4 ) ]] || { echo 'Usage: sandbox-launch check | runner PACKAGE BROKER FILTERED_DISPLAY' >&2; exit 2; }
 config=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
-[[ -x /usr/bin/bwrap ]] || { echo 'Bubblewrap is required. Install the bubblewrap package.' >&2;exit 1; }
-[[ "$HOME" == /* && "$HOME" != / ]] || { echo 'HOME must be an absolute non-root directory.' >&2;exit 1; }
-data_home=${XDG_DATA_HOME:-$HOME/.local/share}
-state_home=${XDG_STATE_HOME:-$HOME/.local/state}
-[[ "$data_home" == /* && "$state_home" == /* ]] || { echo 'XDG paths must be absolute.' >&2;exit 1; }
-data="$data_home/omarchy/widgets"
-state="$state_home/omarchy/widgets"
-mkdir -p -- "$data" "$state"
-# Narrow mounts are intentional: no home, /etc, host /proc or session bus bind.
+[[ -x /usr/bin/bwrap ]] || { echo 'Bubblewrap is required.' >&2; exit 1; }
 args=(--unshare-all --die-with-parent --new-session --cap-drop ALL --clearenv
       --ro-bind /usr /usr --proc /proc --dev /dev --tmpfs /tmp
-      --dir /run --perms 0700 --dir /run/widget-core
-      --dir "$HOME" --dir /etc --dir /app
-      --ro-bind "$config" "$config"
-      --ro-bind "$data" "$data" --bind "$state" "$state"
-      --setenv HOME "$HOME" --setenv PATH /usr/bin:/bin
-      --setenv LANG C.UTF-8 --setenv XDG_DATA_HOME "$data_home"
-      --setenv XDG_STATE_HOME "$state_home" --setenv XDG_CACHE_HOME /tmp/cache
-      --setenv XDG_CONFIG_HOME /tmp/config --setenv XDG_RUNTIME_DIR /run/widget-core
+      --dir /run --perms 0700 --dir /run/widget-core --dir /etc --dir /widget
+      --dir /app --dir /app/bin
+      --ro-bind "$config/bin/omarchy-widget" /app/bin/omarchy-widget
+      --setenv HOME /tmp/home --setenv PATH /usr/bin:/bin --setenv LANG C.UTF-8
+      --setenv XDG_DATA_HOME /tmp/data --setenv XDG_STATE_HOME /tmp/state
+      --setenv XDG_CACHE_HOME /tmp/cache --setenv XDG_CONFIG_HOME /tmp/config
+      --setenv XDG_RUNTIME_DIR /run/widget-core
       --setenv QT_QPA_PLATFORM wayland --setenv QT_QUICK_BACKEND software
-      --setenv OMARCHY_WIDGET_SANDBOX shared-offline-v1
-      --chdir "$config")
-# Arch uses /usr symlinks; Ubuntu uses separate loader-link layouts.
+      --setenv OMARCHY_WIDGET_ROLE runner --setenv OMARCHY_WIDGET_SANDBOX package-offline-v2
+      --setenv OMARCHY_WIDGET_BROKER /run/widget-core/broker --chdir /app)
+for item in Host.qml shell.qml qml Commons Ui; do
+  args+=(--ro-bind "$config/$item" "/app/$item")
+done
 for item in bin sbin lib lib64; do
   if [[ -L "/$item" ]]; then args+=(--symlink "$(readlink -- "/$item")" "/$item")
-  elif [[ -d "/$item" ]]; then args+=(--ro-bind "/$item" "/$item");fi
+  elif [[ -d "/$item" ]]; then args+=(--ro-bind "/$item" "/$item"); fi
 done
 for item in /etc/ld.so.cache /etc/fonts /etc/localtime; do
   [[ ! -e "$item" ]] || args+=(--ro-bind "$item" "$item")
 done
-# Mount the active theme only; its parent contains unrelated application state.
-theme="$state_home/omarchy/current/theme"
-[[ ! -d "$theme" ]] || args+=(--ro-bind "$(realpath -- "$theme")" "$theme")
-if [[ "$mode" == check ]]; then
-  # Same namespace/mount/environment policy, without any desktop socket.
-  exec /usr/bin/bwrap "${args[@]}" -- /usr/bin/true
-fi
-runtime=${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required for Wayland}
-display=${WAYLAND_DISPLAY:?WAYLAND_DISPLAY is required}
-[[ "$runtime" == /* && "$display" != */* && "$display" != . && "$display" != .. ]] || { echo 'Unsupported Wayland socket path.' >&2;exit 1; }
-[[ -S "$runtime/$display" && ! -L "$runtime/$display" ]] || { echo 'Wayland socket is unavailable.' >&2;exit 1; }
-args+=(--ro-bind "$runtime/$display" /run/widget-core/wayland-0
-       --setenv WAYLAND_DISPLAY wayland-0)
-# Software rendering avoids exposing GPU devices. No D-Bus, X11, SSH agent,
-# Hyprland command socket, host runtime directory or network namespace is shared.
-exec /usr/bin/bwrap "${args[@]}" -- /usr/bin/qs --no-duplicate -p "$config"
+if [[ "$mode" == check ]]; then exec /usr/bin/bwrap "${args[@]}" -- /usr/bin/true; fi
+[[ -d "$2" && ! -L "$2" && -S "$3" && ! -L "$3" && -S "$4" && ! -L "$4" ]] || { echo 'Runner package or capability socket unavailable.' >&2; exit 1; }
+args+=(--ro-bind "$2" /widget --ro-bind "$3" /run/widget-core/broker
+       --ro-bind "$4" /run/widget-core/wayland-0 --setenv WAYLAND_DISPLAY wayland-0)
+exec /usr/bin/bwrap "${args[@]}" -- /usr/bin/qs --no-duplicate -p /app

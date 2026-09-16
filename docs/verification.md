@@ -17,7 +17,7 @@ Earlier integration attempts failed on missing Python QQuickItem and QML theme i
 
 ## Not run
 
-Real Wayland/Hyprland rendering, systemd session lifecycle, crash recovery on the XPS, GPU masking across drivers, fractional scaling, monitor hotplug and live theme transitions. No installed Omarchy version is recorded as tested for this standalone runtime. See desktop-checks.md. The shared Bubblewrap policy has a dedicated denial-probe CI job; per-package and Wayland escape testing are not claimed. The local managed workspace cannot create sockets or execute the namespace probe, so local policy-plan checks are not labelled live sandbox verification.
+Real Wayland/Hyprland rendering, systemd session lifecycle, crash recovery on the XPS, GPU masking across drivers, fractional scaling, monitor hotplug and live theme transitions. No installed Omarchy version is recorded as tested for this standalone runtime. See desktop-checks.md. The historical shared policy was tested below. The widget-island follow-up adds package authority and actual Wayland proxy tests; these do not establish live desktop compatibility. The local managed workspace cannot create sockets or execute the namespace probe, so local policy-plan checks are not labelled live sandbox verification.
 
 Upstream review: Omarchy source and Quickshell CLI/process documentation were inspected during development; the original widget repository was reviewed at `d99737791a5b983d6ba7dc6a9790e38ff4f8edfb`. No substantial source from that repository was copied.
 
@@ -28,3 +28,25 @@ The sandbox change adds a fourteenth Rust test for durable host controls, plus m
 The Ubuntu 24.04 live job failed during Bubblewrap loopback setup (`RTM_NEWADDR: Operation not permitted`), after the policy-plan checks passed. The live job was moved to Ubuntu 22.04 to exercise the same policy without weakening system security settings. This does not establish support for hosts with disabled/restricted unprivileged namespaces; those hosts fail preflight.
 
 At runtime commit `8cfac8fb70e3725c0f62cd139567dca13f23744d`, [CI run 35014760926](https://github.com/tcballard/omarchy-widget-core/actions/runs/35014760926) passed all three jobs: Rust (14 tests, rustfmt and Clippy), QML/settings/installer checks, and the real Ubuntu 22.04 Bubblewrap denial probes. The live probe verified denied home/agent access, read-only code/package mounts, hidden host processes, denied host-network access and successful Core-state persistence. The Wayland socket was not included in the probe; live desktop and compositor-capability testing remain outstanding.
+
+
+## Widget-island follow-up
+
+[Run 35019620767](https://github.com/tcballard/omarchy-widget-core/actions/runs/35019620767), input `656586c44487d6d0b171a7064a493edd7d09138f`, passed Rust/Clippy, QML integration/installer tests, actual Bubblewrap package-mount probes and the pinned wl-mitm adversarial wire test. Its formatter exported the formatted Rust source subsequently committed to the branch.
+
+The follow-up adds a slow-client regression using an actual Unix socket pair: trickling bytes does not extend the broker's absolute deadline. The Rust job now has 17 tests. Package authority tests reject cross-package reads/writes and expired generations, verify stale-save rejection and exercise a real broker socket. Qt integration still uses the actual controller, queue, settings surface and CLI/disk persistence, with Quickshell's role supplied by the harness.
+
+The proxy test compiles the pinned upstream proxy and feeds real Wayland messages through it to a fake compositor. It checks hidden screen-capture/clipboard/unknown globals, denied forged and mismatched binds, allowed bottom-layer surface creation, denied overlay creation and denied exclusive keyboard capture. Layer policy unit tests also cover reserved screen zones and layer changes. This is not a graphical compositor test.
+
+Source fingerprints in `source-sha256.json` identify the recorded local files; they are not an independent test result. Final strict-format CI evidence is linked in PR #2. No XPS or live Hyprland acceptance has been performed here. All original results above remain historical, tied to their stated inputs.
+
+
+## Per-package resource budgets
+
+[Run 35021945698](https://github.com/tcballard/omarchy-widget-core/actions/runs/35021945698), input `16f520a17558a90d35d7b5dc02b0aff2ca1e8c8e`, passed all five jobs. There are now 19 Rust tests, including fail-closed controller validation and resource-policy tests. The source formatter output is committed before restoring the strict-format gate.
+
+The Ubuntu 24.04 resource job creates a disposable user account with explicitly delegated CPU/memory/pids controllers. It invokes the production systemd policy and Rust worker with labelled proxy and widget-workload fixtures. It reads actual kernel cgroup limits, triggers a package-local memory OOM, observes CPU throttling and denied task creation, verifies Core and a sibling remain active, and checks package services stop when Core stops. It also verifies literal spaces/dollar signs in paths and installer resource preflight. These are real systemd/cgroup tests; the proxy/workload fixtures are not Qt or Wayland compatibility evidence.
+
+The first resource job failed in CI setup because runtime `set-property` did not support changing controller delegation on that existing user service. The corrected fixture configures a newly created disposable user's service before it starts. Production never changes system-wide delegation; missing controls fail preflight. Installer fixtures also verify resource-preflight failure leaves the old installation intact.
+
+The final strict-format commit and resource descendant-cleanup assertions are recorded in PR #2's CI link. Budget tuning and graphical/service lifecycle acceptance on the XPS remain outstanding.

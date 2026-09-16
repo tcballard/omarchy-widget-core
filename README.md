@@ -2,13 +2,13 @@
 
 <img src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-app.svg" alt="Omarchy App" height="20">
 
-A shared native desktop-widget host for Omarchy: fixed widget families, a snap grid, settings, and package management. Each widget lives in its own repository. Core runs their QML in a **separate Quickshell process**, supervised by a user service. An optional compatibility plugin forwards old shell commands; it loads no widget code.
+A shared native desktop-widget host for Omarchy: fixed widget families, a snap grid, settings, and package management. Each widget lives in its own repository. Core runs each active package in its **own sandboxed Quickshell process**, with a trusted manager and state broker supervised by a user service. An optional compatibility plugin forwards old shell commands; it loads no widget code.
 
 **v0.0.2 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. No installed Omarchy version has been verified for this new runtime on a live desktop yet. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
 
 ## Install or upgrade Core
 
-Requires Omarchy, Quickshell (`qs`), systemd user services, jq, Bubblewrap (`bubblewrap`) and Rust 1.89+. The installer checks namespace support before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
+Requires Omarchy, Quickshell (`qs`), systemd 254+ user services with cgroup v2 CPU/memory/pids controls, jq, Bubblewrap (`bubblewrap`), Git and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support and actual resource enforcement before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
 
 ```bash
 bash install-local --update
@@ -61,7 +61,7 @@ Core uses `$XDG_DATA_HOME/omarchy/widgets` and `$XDG_STATE_HOME/omarchy/widgets`
 
 Settings saves complete only after the helper commits state. A revision conflict retains the editor draft and reports an error. The writer uses a kernel file lock released on process exit, atomic replacement and filesystem sync. Package versions remain on disk for rollback; abandoned versions are not automatically garbage-collected in this release.
 
-`omarchy-widget hide INSTANCE_ID` keeps settings. `remove PACKAGE_ID` unregisters the package and removes its instance settings; retained code is not securely erased. `duplicate INSTANCE_ID` creates independently configurable instances. `stop`, `start`, `restart` and `hide-all` control the shared host.
+`omarchy-widget hide INSTANCE_ID` keeps settings. `remove PACKAGE_ID` unregisters the package and removes its instance settings; retained code is not securely erased. `duplicate INSTANCE_ID` creates independently configurable instances. `stop`, `start`, `restart` and `hide-all` control Core and its widget runners.
 
 To uninstall the runtime while preserving widget data:
 
@@ -74,9 +74,9 @@ Then remove the Core installation, launcher and service file if desired. Core's 
 
 ## Security and verification
 
-The host now runs in a **mandatory shared Bubblewrap sandbox**: code and package files are read-only, only Core state is persistently writable, networking and host-process visibility are isolated, and session credentials/buses are not inherited. The service limits memory, CPU and process count. `omarchy-widget sandbox-check` verifies that the namespace policy can start.
+Each package runs in a **mandatory Bubblewrap island** with read-only code, private temporary storage and no direct registry, home, network or session-bus access. A package-scoped broker mediates settings and layout changes. Its Wayland connection passes through a pinned allowlist proxy that blocks capture, clipboard and virtual-input protocols, and rejects overlay layers and exclusive keyboard capture. `omarchy-widget sandbox-check` tests namespace startup.
 
-This is **not per-package isolation**. Widgets still share Core state and an unfiltered Wayland connection. Install trusted widgets only; this is not yet a boundary for hostile marketplace code. Network widgets will not work until a broker/permission model exists. Software rendering is used to avoid exposing GPU devices. Theme-directory replacement requires `omarchy-widget restart` to remount the active theme. See the [runtime decision](docs/runtime-and-security.md) for exact limits.
+This development boundary is not independently audited. Each package has its own 256 MiB memory ceiling, 25% CPU quota and 64-task limit, including its proxy and descendants. Core has a separate budget. Allowed surface protocols do not enforce widget geometry against malicious clients. Network widgets need a future broker/permission model. Software rendering avoids exposing GPU devices. Theme values arrive through Core's broker. See the [runtime decision](docs/runtime-and-security.md) for the exact boundary and remaining limits.
 
 Portable verification runs Rust tests, rustfmt, Clippy, Qt component checks and a production QML settings/queue → real Rust CLI → disk/reopen integration test. Wayland, restart, theme switching, fractional scaling and multiple monitors still require the [desktop checks](docs/desktop-checks.md).
 
