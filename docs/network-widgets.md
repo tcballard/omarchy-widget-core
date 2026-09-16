@@ -1,18 +1,37 @@
-# Network widgets: proposed next API
+# Public weather service
 
-Status: design only. This change does not grant widgets network access.
+API 2 optionally declares `capabilities:["weather"]` and `refresh:"weather"`.
+The Widgets manager presents an Allow/Revoke action explaining that coordinates
+are sent to Open-Meteo. CLI: `weather-permission PACKAGE allow|deny`. Grants bind
+to the immutable installed generation and expire on update; the renderer cannot
+grant itself permission. Only that package's instance can request weather.
 
-Weather, calendars, RSS and markets are natural widget uses. Keep the renderer sandboxed and let a trusted Core data service fetch declared resources. The widget should receive bounded data and timestamps, not credentials or a general-purpose proxy.
+`widgetContext.requestWeather(latitude,longitude)` updates `widgetContext.weather`:
+`{state,data,updatedAt,refreshing,error}`. States are loading, ready, stale or
+unavailable; data contains temperatureC, weatherCode, observedAt and attribution.
+The bundled `examples/weather` exercises the contract with independent settings.
 
-Proposed first scope:
+Core calls only [Open-Meteo's current weather endpoint](https://open-meteo.com/en/docs),
+using fixed fields and validated coordinates rounded to 0.01 degrees. There is
+no URL, header, credential, cookie or redirect input. IPv4 DNS results must all
+be public; the chosen address is pinned for the TLS request, preserving hostname
+verification and preventing DNS rebinding. IPv6-only resolution fails closed.
+Curl configuration and environment are cleared; proxies and redirects are unused.
+This adds curl and getent as host dependencies. Provider terms apply to deployment;
+the public example is not an account-linked or commercial weather service.
 
-- Read-only public HTTPS JSON/text feeds, with manifest-declared exact origins and user-visible permission review. Start with one weather provider to prove the full path.
-- Core-owned request scheduling, minimum refresh intervals, per-package concurrency and byte/time limits, caching and backoff. A stale cached result carries fetched-at and error metadata.
-- Broker authority tied to package identity and code generation. A widget cannot claim another package's grants or cache entries.
-- Revalidate every redirect and resolved address. Deny loopback, private/link-local/metadata destinations by default, including IPv6 and DNS rebinding paths. Never inherit ambient proxy credentials, browser cookies or arbitrary headers.
-- Cache by package, grant and resource identity. A widget update that changes origins requires a new grant; disabling/removing a widget cancels work and revokes its access.
-- Public feeds first. Private calendars and account-linked services need a separate credential and OAuth design; secret tokens stay outside widget settings and renderer snapshots.
+A supervisor-wide public cache shares identical coordinates only after each
+request passes its own generation grant. It holds at most 128 locations, refreshes
+after 15 minutes, deduplicates in-flight requests and starts at most one fetch
+per 10 seconds. DNS has a bounded process timeout; HTTPS has a 64-KiB limit and
+six-second watchdog. Failure retains data and backs off for one minute. Cached
+data is volatile across Core restart. The cache-full response is explicit.
 
-The candidate QML-facing API should expose named data resources (for example `weather.current`) and statuses such as loading, fresh, stale and denied. Do not publish a concrete API number or promise signatures until a working provider exercises permissions, cancellation, offline behaviour and isolation.
+Hidden/workspace-inactive instances cannot start new fetches. Grant revocation,
+removal and generation changes deny subsequent reads; an already-started bounded
+public request may finish into the shared cache. Revocation does not promise to
+recall bytes already delivered. Renderers retain network denial.
 
-This design preserves the current renderer network denial and does not turn the existing state broker into an arbitrary URL fetch endpoint.
+Portable tests cover deduplication, hidden gating, backoff, stale preservation,
+coordinate validation, private-address rejection and cache bounds. The production
+HTTP path was not exercised against the live provider in this environment.

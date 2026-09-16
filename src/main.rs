@@ -2,6 +2,7 @@ mod grid;
 mod island;
 mod resources;
 mod reveal;
+mod weather;
 mod workspaces;
 use serde_json::{json, Value};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -169,6 +170,20 @@ fn manifest(dir: &Path) -> Result<Value> {
             {
                 return Err("Preview must be PNG with dimensions from 1 to 1024".into());
             }
+        }
+    }
+    if let Some(caps) = v.get("capabilities") {
+        let caps = caps.as_array().ok_or("Capabilities must be an array")?;
+        if caps.len() > 1 || caps.iter().any(|c| c != "weather") {
+            return Err("Unsupported capability; only weather is available".into());
+        }
+    }
+    if let Some(refresh) = v.get("refresh") {
+        if !["none", "minute", "weather"].iter().any(|x| refresh == x) {
+            return Err("Refresh must be none, minute or weather".into());
+        }
+        if refresh == "weather" && !weather::declared(&v) {
+            return Err("Weather refresh requires weather capability".into());
         }
     }
     Ok(v)
@@ -540,7 +555,7 @@ impl Registry {
                         .filter(|p| p["packageId"] == id)
                         .count();
                     catalog.push(
-                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count}),
+                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count,"weatherAllowed":weather::authorised(self,&l,&id)}),
                     );
                     let mut found = false;
                     for (instance, p) in l["placements"].as_object().unwrap() {
@@ -930,6 +945,9 @@ fn run(args: &[String]) -> Result<Value> {
         return Ok(json!(true));
     }
 
+    if cmd == "weather-permission" && args.len() == 3 {
+        return weather::grant(&Registry::from_env()?, &args[1], &args[2]);
+    }
     if cmd == "help" {
         return Ok(
             json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
@@ -1601,5 +1619,43 @@ mod tests {
         r.control("reveal").unwrap();
         assert_eq!(r.snapshot().unwrap()["runtime"]["revealing"], false);
         assert_eq!(r.layout().unwrap()["placements"], before);
+    }
+    #[test]
+    fn weather_grant_is_explicit_and_generation_bound() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let mut m = manifest(&src).unwrap();
+        m["capabilities"] = json!(["weather"]);
+        atomic_json(&src.join("widget.json"), &m).unwrap();
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        assert!(!weather::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
+        weather::grant(&r, "io.example.test", "allow").unwrap();
+        assert!(weather::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
+        r.deploy(&src, true).unwrap();
+        assert!(!weather::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
+        weather::grant(&r, "io.example.test", "allow").unwrap();
+        weather::grant(&r, "io.example.test", "deny").unwrap();
+        assert!(!weather::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
     }
 }

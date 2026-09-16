@@ -88,6 +88,27 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
             }
             Ok(snapshot)
         }
+        Some("weather") if args.len() == 4 => {
+            let p = &layout["placements"][&args[1]];
+            if p["packageId"] != package
+                || !weather::declared(&manifest(source)?)
+                || !weather::authorised(r, &layout, package)
+            {
+                return Err("Weather access is not allowed for this package version".into());
+            }
+            let d = workspaces::snapshot();
+            let positions = grid::resolve(&layout["placements"], &d);
+            let monitor = positions[&args[1]]["monitor"].as_str().unwrap_or("");
+            let active = p["enabled"] == true
+                && !monitor.is_empty()
+                && (layout["runtime"]["shown"] != false
+                    || reveal::active(
+                        layout["runtime"]["revealUntil"].as_u64().unwrap_or(0),
+                        reveal::now(),
+                    ))
+                && (p["workspace"].is_null() || p["workspace"] == d["monitors"][monitor]);
+            weather::request(&args[2], &args[3], active)
+        }
         Some("edit-done") if args.len() == 3 => {
             let _lock = r.lock()?;
             let mut current = r.layout()?;
