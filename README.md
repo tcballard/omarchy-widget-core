@@ -8,7 +8,7 @@ A shared native desktop-widget host for Omarchy: fixed widget families, a cell o
 
 ## Install or upgrade Core
 
-Requires Omarchy, Quickshell (`qs`), systemd 254+ user services with cgroup v2 CPU/memory/pids controls, jq, Bubblewrap (`bubblewrap`), Git and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support and actual resource enforcement before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
+Requires Omarchy, Quickshell (`qs`), systemd 254+ user services with cgroup v2 CPU/memory/pids controls, jq, Bubblewrap (`bubblewrap`), Git, curl, getent and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support and actual resource enforcement before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
 
 ```bash
 bash install-local --update
@@ -32,7 +32,7 @@ omarchy-widget status
 omarchy-widget logs
 ```
 
-Do not use an old widget's `install-local --update` script to copy registry directories. Core now tracks complete package versions and switches the active version atomically. Updating or rolling back code preserves all instance settings. Code rollback cannot undo a widget-specific settings-schema migration.
+Do not use an old widget's `install-local --update` script to copy registry directories. Core now tracks complete package versions and switches the active version atomically. Updates stage and validate declared settings migrations before changing the code pointer. Compatible rollback restores the matching settings checkpoint while preserving later placement changes; conflicting later settings edits block rollback. See [recovery](docs/recovery.md).
 
 To exercise all three sizes and the shared settings editor without another repository:
 
@@ -53,7 +53,7 @@ This is a development fixture, not a new product widget.
 
 Core inherits global desktop gaps. Arrange shows cell outlines; drag or use arrow keys to move one cell, and cycle only the sizes the widget supports. Explicit moves and resizes reject collisions without pushing other widgets. Theme scale affects content rather than the cell grid.
 
-API 1 packages remain loadable through a compatibility facade, but their arbitrary dimensions become fixed families: compact → small, standard → medium, wide → large. Existing World Clock layouts may need Large until its individual repository adopts the new family and settings-editor contract. Its local persistence debugging work has not been overwritten.
+API 1 packages remain loadable through a compatibility facade, but their arbitrary dimensions become fixed families: compact → small, standard → medium, wide → large. World Clock’s two stacked PRs supply the family layouts and shared settings-editor contract; Core CI pins that implementation for integration testing.
 
 ## State and recovery
 
@@ -85,9 +85,9 @@ Then remove the Core installation, launcher and service file if desired. Core's 
 
 ## Security and verification
 
-Each package runs in a **mandatory Bubblewrap island** with read-only code, private temporary storage and no direct registry, home, network or session-bus access. A package-scoped broker mediates settings and layout changes. Its Wayland connection passes through a pinned allowlist proxy that blocks capture, clipboard and virtual-input protocols, and rejects overlay layers and exclusive keyboard capture. `omarchy-widget sandbox-check` tests namespace startup.
+Each package runs in a **mandatory Bubblewrap island** with read-only code, private temporary storage and no direct registry, home, network or session-bus access. A package-scoped broker mediates settings and layout changes. Its Wayland connection passes through a pinned allowlist proxy that blocks capture, clipboard and virtual-input protocols, and rejects permanent overlay privileges and exclusive keyboard capture. A Core-issued temporary reveal lease permits overlay surfaces until its runner is stopped. `omarchy-widget sandbox-check` tests namespace startup.
 
-This development boundary is not independently audited. Each package has its own 256 MiB memory ceiling, 25% CPU quota and 64-task limit, including its proxy and descendants. Core has a separate budget. Allowed surface protocols do not enforce widget geometry against malicious clients. Network widgets need a future broker/permission model. Software rendering avoids exposing GPU devices. Theme values arrive through Core's broker. See the [runtime decision](docs/runtime-and-security.md) for the exact boundary and remaining limits.
+This development boundary is not independently audited. Each package has its own 256 MiB memory ceiling, 25% CPU quota and 64-task limit, including its proxy and descendants. Core has a separate budget. Allowed surface protocols do not enforce widget geometry against malicious clients. The optional weather broker has explicit per-generation permission, bounded requests and shared public caching; widgets still have no raw network access. Software rendering avoids exposing GPU devices. Theme values arrive through Core's broker. See the [runtime decision](docs/runtime-and-security.md) for the exact boundary and remaining limits.
 
 Portable verification runs Rust tests, rustfmt, Clippy, Qt component checks and a production QML settings/queue → real Rust CLI → disk/reopen integration test. Wayland, restart, theme switching, fractional scaling and multiple monitors still require the [desktop checks](docs/desktop-checks.md).
 
@@ -148,3 +148,22 @@ See [manager verification](docs/manager-verification.md) and the
 [implementation stack](docs/implementation-stack.md). Portable Qt tests exercise
 real mouse actions through the production controller and Rust registry. Live
 Omarchy focus, keyboard navigation, scaling and monitor acceptance remain pending.
+
+## Development stack and SDK
+
+The seven milestones are implemented as dependent draft PRs; see the
+[stack and verification record](docs/implementation-stack.md) for merge order and
+remaining desktop acceptance. No PR in this work has been merged or released.
+
+`omarchy-widget reveal` is the separate temporary glance action; Escape or
+`omarchy-widget dismiss-reveal` ends it. The lease expires after 30 seconds.
+See [reveal](docs/reveal.md) before desktop testing: focus/stacking/lock acceptance
+is still outstanding.
+
+Create a package with `omarchy-widget new PATH ID NAME`. The
+[authoring SDK](docs/authoring-sdk.md) covers the starter, validator, previews,
+lifecycle, settings schemas and external-author workflow. Install
+`examples/weather` to exercise permissioned shared data; the Available tab grants
+or revokes weather access. The same tab shows runner health and offers package
+restart, disable/enable and compatible rollback. Restart explicitly discards any
+unapplied draft belonging to that package; updates wait for the editor to close.

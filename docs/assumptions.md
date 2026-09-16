@@ -13,7 +13,7 @@ Assumptions:
 - Settings objects are small (8 KiB); the registry is bounded to 1 MiB / 128 instances / 64 active packages.
 - Package code runs in separate Bubblewrap islands with scoped state access and filtered Wayland connections. This development boundary still requires security review and desktop acceptance; each package has a separate systemd resource budget, including its runner and proxy.
 - World Clock remains a single multi-city widget. Its own API 2 layout/editor migration is separate from this Core change.
-- A version rollback changes code, not user settings. Widget authors must version their own settings migrations.
+- Versioned declarative migrations and matching settings checkpoints make compatible code/settings rollback atomic. Later incompatible edits block rollback instead of being discarded.
 - Complete version directories may remain after interruption or removal. Automatic garbage collection is deferred to avoid deleting code used by a running host.
 - Display positions use monitor names and a fallback screen. Live compositor behaviour, work-area boundaries and fractional scaling must pass desktop acceptance.
 - Core consumes active theme files and uses its own components; no official new Omarchy theme API is claimed.

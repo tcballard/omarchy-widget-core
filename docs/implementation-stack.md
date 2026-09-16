@@ -24,8 +24,17 @@ verification; no live Omarchy session is available in the build environment.
    It adds the installed-type gallery, instance actions, previews and retained-state
    uninstall. Its PR is based on Core #5, not main.
 5. Core [PR #7](https://github.com/tcballard/omarchy-widget-core/pull/7) hardens desktop topology handling.
-6. Subsequent Core branches target the preceding Core milestone branch. Record
-   actual PR URLs here as they are opened. Do not create empty placeholder PRs.
+6. Core [PR #8](https://github.com/tcballard/omarchy-widget-core/pull/8)
+   (`feat/widget-reveal` → `feat/widget-desktop`) adds bounded quick reveal.
+7. Core [PR #9](https://github.com/tcballard/omarchy-widget-core/pull/9)
+   (`feat/widget-lifecycle` → `feat/widget-reveal`) adds lifecycle and weather data.
+8. Core [PR #10](https://github.com/tcballard/omarchy-widget-core/pull/10)
+   (`feat/widget-recovery` → `feat/widget-lifecycle`) adds migrations and fault controls.
+9. Core `feat/widget-sdk` → `feat/widget-recovery` completes the authoring SDK and
+   final integration fixes. The actual PR link is recorded after creation.
+
+Retarget each dependent PR after its parent merges. These remain draft development
+PRs; none were merged, deployed or released by this implementation task.
 
 ## Milestones and remaining work
 
@@ -37,11 +46,12 @@ verification; no live Omarchy session is available in the build environment.
 | 4. Quick reveal | Development prototype; live acceptance pending | Current filter denies overlays. Prototype Core-controlled reveal without importing widget QML into the trusted manager or granting permanent overlay privileges. Prove focus return, dismissal, lock behaviour and unchanged application placement on Hyprland. |
 | 5. Lifecycle + data | Development implementation; portable checks reproduced | Explicit lifecycle, rendering versus background activity; one public weather broker with shared authorised caching, bounded fetches, permissions, stale data and retries. Keep renderer network denial. |
 | 6. Recovery + faults | Development implementation; portable checks reproduced | Code/settings checkpoints, staged versioned migrations, compatible rollback, preserve later edits, manager-visible failures and package-level retry/disable. Test fault injection. |
-| 7. SDK + baseline | Pending | Starter, validator, shared status/settings components, deterministic previews, migration examples and external-author acceptance. Stabilise after Clock and weather exercise the contract. |
+| 7. SDK + baseline | Development implementation; portable author workflow passes | Starter, validator, shared status/settings components, deterministic previews, migration examples and external-author acceptance. Stabilise after Clock and weather exercise the contract. |
 
-The quick-reveal feasibility work must precede its production implementation.
-Existing policy is intentionally unchanged by the foundation PR; that PR does not
-claim reveal is implemented or feasible under the unchanged policy.
+The original bottom-only filter needed an architectural change for reveal. The
+implemented short-lived Core lease is documented in `docs/reveal.md`; it is still
+an experimental prototype until focus, stacking and lock behaviour pass on the
+actual desktop. No live acceptance is implied by wire tests.
 
 ## Foundation verification (historical, recorded in Core #5)
 
@@ -67,8 +77,10 @@ acknowledgement is deliberately injected to verify generation ownership. Real
 Save actions invoke the actual Rust binary against an isolated temporary profile.
 Every CLI read reopens state in a fresh process; this is not a machine reboot.
 
-## Next session
+## Final stack verification
 
-Start with milestone 3 on top of Core `feat/widgets-manager`; inspect open PRs
-and heads first. See `docs/manager-verification.md` for this turn’s evidence. Avoid duplicating World Clock #1. Carry forward the live desktop
-gates and the early reveal investigation. Update this record as each PR lands.
+See `stack-verification.md` and `stack-source-sha256.json` for the final portable
+run. Earlier foundation/manager source hashes are historical milestone records,
+not hashes of the finished stack. The implementation work is complete; the
+remaining release gates are live Hyprland/XPS and live weather-provider acceptance
+in `desktop-checks.md`. No installed Omarchy version is claimed as verified.
