@@ -6,6 +6,7 @@ import qs.Ui as Ui
 FocusScope {
     id: root
     property bool busy: false
+    property bool canSave: true
     property string error: ""
     default property alias contents: slot.data
     signal cancelRequested()
@@ -20,9 +21,9 @@ FocusScope {
         Label { text:root.error; visible:text!==""; wrapMode:Text.Wrap; color:Color.urgent; Layout.fillWidth:true }
         RowLayout {
             Layout.fillWidth:true
-            Ui.Button { text:"Cancel"; enabled:!root.busy; focusable:true; onClicked:root.cancelRequested() }
+            Ui.Button { objectName:"cancel-button"; text:"Cancel"; enabled:!root.busy; focusable:true; onClicked:root.cancelRequested() }
             Item { Layout.fillWidth:true }
-            Ui.Button { objectName:"save-button"; text:root.busy?"Saving…":"Save"; enabled:!root.busy; focusable:true; onClicked:root.saveRequested() }
+            Ui.Button { objectName:"save-button"; text:root.busy?"Saving…":"Save"; enabled:!root.busy && root.canSave; focusable:true; onClicked:root.saveRequested() }
         }
     }
 }

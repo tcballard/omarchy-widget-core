@@ -35,6 +35,14 @@ jobs:
       - run: cargo build --locked
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/runtime_integration.py target/debug/omarchy-widget
+      - name: Fetch the pinned World Clock API 2 integration fixture
+        uses: actions/checkout@v4
+        with:
+          repository: tcballard/omarchy-widget-worldclock
+          ref: 5cd7b0894376eb16d070fa244f4aeaea1448dd58
+          path: test-results/worldclock
+          persist-credentials: false
+      - run: python3 tests/worldclock_integration.py target/debug/omarchy-widget test-results/worldclock
       - run: python3 tests/installer.py
       - run: python3 tests/keybinding.py
       - uses: actions/setup-node@v4

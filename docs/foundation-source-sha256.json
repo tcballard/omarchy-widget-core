@@ -1,0 +1,13 @@
+{
+  "Host.qml": "1b485a8c0f17bc8824cf546345fe680f54dcc6f260257e2016d070597c2de276",
+  "qml/SettingsPanel.qml": "a3cbbfbec5341ccfad96d3ac3a538c9f8420c34e4004c74e7bf3cd1a35756420",
+  "qml/RegistryQueue.qml": "d2aef4df9e7e75de13e38c9f0b983df6d4c0d6a69e5c8162ff28c0cc887731d3",
+  "tests/worldclock_integration.py": "32e7ce8a8919756af4e503dcae0b40db059566699c2fbc2bfa05b04824f07386",
+  "tests/runtime_integration.py": "afba3cb8fd342b8213b7f7862aff724aa6726b85a268c8eaac39535d359d5ca1",
+  "tests/qml_smoke.py": "3d78aea5d222e4d79726824f9d8e71bce00e6bdf010dbecebb6baf23c6251338",
+  "src/grid.rs": "99659653f7ddc9d7ead01a9990bbdd8b009beb20b20a51deb8fb053be7ae5ae2",
+  "src/island.rs": "a41704fae108aa84a30b7bfb5b7b08b97522ac9949aa366a514403eb7ee4e2e4",
+  "src/main.rs": "344b6385ed8983d0c33b736b64ed96607aeb83d4c2a5faf5b642e2488ff7210d",
+  "src/resources.rs": "a7bc0f2f2c58113c168f73f8cb8cdae391c3672fbebe10d8ffbd3b6abacf30a4",
+  "src/workspaces.rs": "fa410fa24ebe070a51d19fa834da4a8c9c23c79179cf4fe131d47c5543928d63"
+}
