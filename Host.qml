@@ -191,6 +191,8 @@ Item {
             onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
             onDuplicateRequested: function(id) { root.execute(["duplicate",id]); }
             onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
+            onPackageControlRequested: function(id,action) { root.execute(["package-control",id,action]); }
+            onRollbackRequested: function(id) { root.execute(["rollback",id]); }
             onWeatherPermissionRequested: function(id, allowed) { root.execute(["weather-permission",id,allowed ? "allow" : "deny"]); }
             onUninstallRequested: function(id, policy) { root.execute(["uninstall",id,policy]); }
             onArrangeRequested: { root.control("arrange"); root.shown = true; root.managerOpen = false;root.control("close-manager"); }

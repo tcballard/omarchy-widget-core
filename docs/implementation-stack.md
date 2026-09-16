@@ -36,7 +36,7 @@ verification; no live Omarchy session is available in the build environment.
 | 3. Desktop integration | Development implementation; portable checks reproduced | Validate existing grid and inherited ricing; reserved bounds, scaling, hotplug, workspace occupancy and preference restoration. Preserve monitor-bound workspace semantics. |
 | 4. Quick reveal | Development prototype; live acceptance pending | Current filter denies overlays. Prototype Core-controlled reveal without importing widget QML into the trusted manager or granting permanent overlay privileges. Prove focus return, dismissal, lock behaviour and unchanged application placement on Hyprland. |
 | 5. Lifecycle + data | Development implementation; portable checks reproduced | Explicit lifecycle, rendering versus background activity; one public weather broker with shared authorised caching, bounded fetches, permissions, stale data and retries. Keep renderer network denial. |
-| 6. Recovery + faults | Pending | Code/settings checkpoints, staged versioned migrations, compatible rollback, preserve later edits, manager-visible failures and package-level retry/disable. Test fault injection. |
+| 6. Recovery + faults | Development implementation; portable checks reproduced | Code/settings checkpoints, staged versioned migrations, compatible rollback, preserve later edits, manager-visible failures and package-level retry/disable. Test fault injection. |
 | 7. SDK + baseline | Pending | Starter, validator, shared status/settings components, deterministic previews, migration examples and external-author acceptance. Stabilise after Clock and weather exercise the contract. |
 
 The quick-reveal feasibility work must precede its production implementation.

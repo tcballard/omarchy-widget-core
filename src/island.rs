@@ -80,6 +80,7 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
             snapshot["catalog"] = json!([]);
             snapshot["retained"] = json!([]);
             snapshot["runtime"]["managerOpen"] = json!(false);
+            snapshot["runtime"]["packageControls"] = json!({});
             let edit = snapshot["runtime"]["edit"]["instance"]
                 .as_str()
                 .unwrap_or("");
@@ -302,6 +303,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
         .map_err(err)?;
     let mut runners: BTreeMap<String, Runner> = BTreeMap::new();
     let mut failures: BTreeMap<String, (u32, Instant)> = BTreeMap::new();
+    let mut generations: BTreeMap<String, (PathBuf, u64)> = BTreeMap::new();
     let result = (|| {
         let mut next_scan = Instant::now();
         loop {
@@ -320,7 +322,11 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     .unwrap_or("");
                 let mut wanted = BTreeMap::new();
                 for entry in snapshot["installed"].as_array().ok_or("Invalid snapshot")? {
-                    if entry["placement"]["enabled"] == true || entry["instanceId"] == edit {
+                    if (entry["placement"]["enabled"] == true || entry["instanceId"] == edit)
+                        && snapshot["runtime"]["packageControls"]
+                            [entry["packageId"].as_str().unwrap_or("")]["disabled"]
+                            != true
+                    {
                         wanted.insert(
                             entry["packageId"]
                                 .as_str()
@@ -328,6 +334,19 @@ pub fn supervise(config: &Path) -> Result<Value> {
                                 .to_owned(),
                             PathBuf::from(entry["directory"].as_str().ok_or("Missing source")?),
                         );
+                    }
+                }
+                for (id, source) in &wanted {
+                    let generation = (
+                        source.clone(),
+                        snapshot["runtime"]["packageControls"][id]["serial"]
+                            .as_u64()
+                            .unwrap_or(0),
+                    );
+                    if generations.get(id) != Some(&generation) {
+                        runners.remove(id);
+                        failures.remove(id);
+                        generations.insert(id.clone(), generation);
                     }
                 }
                 runners.retain(|id, runner| {
@@ -359,6 +378,27 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         }
                     }
                 }
+                let mut health = serde_json::Map::new();
+                for entry in snapshot["catalog"].as_array().unwrap() {
+                    let id = entry["packageId"].as_str().unwrap();
+                    let count = failures.get(id).map_or(0, |v| v.0);
+                    let state = if entry["packageDisabled"] == true {
+                        "disabled"
+                    } else if runners.contains_key(id) {
+                        "running"
+                    } else if count >= 3 {
+                        "failed"
+                    } else if count > 0 {
+                        "retrying"
+                    } else {
+                        "idle"
+                    };
+                    health.insert(id.into(), json!({"state":state,"failures":count}));
+                }
+                let _ = atomic_json(
+                    &r.state.join("runner-health.json"),
+                    &json!({"updatedAt":reveal::now(),"packages":health}),
+                );
                 next_scan = Instant::now() + Duration::from_secs(1);
             }
             let mut dead = Vec::new();
@@ -379,7 +419,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
                 runners.remove(&id);
                 let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                 failures.insert(id.clone(), (count, Instant::now()));
-                eprintln!("Widget {id} stopped; failure {count}/3 (restart Core to reset)");
+                eprintln!("Widget {id} stopped; failure {count}/3 (restart this package in Widgets to retry)");
             }
             std::thread::sleep(Duration::from_millis(20));
         }

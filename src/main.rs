@@ -2,6 +2,7 @@ mod grid;
 mod island;
 mod resources;
 mod reveal;
+mod settings;
 mod weather;
 mod workspaces;
 use serde_json::{json, Value};
@@ -186,6 +187,7 @@ fn manifest(dir: &Path) -> Result<Value> {
             return Err("Weather refresh requires weather capability".into());
         }
     }
+    settings::contract(&v)?;
     Ok(v)
 }
 fn walk(dir: &Path, relative: &Path, out: &mut Vec<PathBuf>, bytes: &mut u64) -> Result<()> {
@@ -459,6 +461,22 @@ impl Registry {
         }
         palette
     }
+    fn package_control(&self, id: &str, action: &str) -> Result<Value> {
+        if !["restart", "disable", "enable"].contains(&action) {
+            return Err("Use restart, disable or enable".into());
+        }
+        let _lock = self.lock()?;
+        let mut l = self.layout()?;
+        self.source(&l, id)?;
+        let serial = l["revision"]
+            .as_u64()
+            .unwrap()
+            .checked_add(1)
+            .ok_or("Revision exhausted")?;
+        l["runtime"]["packageControls"][id] = json!({"disabled":action=="disable","serial":serial});
+        self.commit(&mut l)?;
+        Ok(json!(true))
+    }
     fn control(&self, method: &str) -> Result<Value> {
         let _lock = self.lock()?;
         let mut l = self.layout()?;
@@ -542,6 +560,10 @@ impl Registry {
         } else {
             json!({})
         };
+        let health =
+            read_json(&self.state.join("runner-health.json"), 65536).unwrap_or(Value::Null);
+        let health_fresh =
+            reveal::now().saturating_sub(health["updatedAt"].as_u64().unwrap_or(0)) < 5000;
         for id in self.ids(&l)? {
             let validated = self
                 .source(&l, &id)
@@ -555,7 +577,7 @@ impl Registry {
                         .filter(|p| p["packageId"] == id)
                         .count();
                     catalog.push(
-                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count,"weatherAllowed":weather::authorised(self,&l,&id)}),
+                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count,"weatherAllowed":weather::authorised(self,&l,&id),"packageDisabled":l["runtime"]["packageControls"][&id]["disabled"]==true,"health":if health_fresh {health["packages"][&id].clone()} else {Value::Null}}),
                     );
                     let mut found = false;
                     for (instance, p) in l["placements"].as_object().unwrap() {
@@ -611,6 +633,31 @@ impl Registry {
         if old.is_none() && self.ids(&l)?.len() >= MAX_PACKAGES {
             return Err("Package limit reached".into());
         }
+        let before = settings::checkpoint(&l["placements"], id);
+        let old_version = old
+            .as_ref()
+            .and_then(|p| manifest(p).ok())
+            .map(|m| settings::version(&m))
+            .unwrap_or(1);
+        for p in l["placements"]
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .filter(|p| p["packageId"] == id)
+        {
+            let from = p["settingsVersion"].as_u64().unwrap_or(old_version);
+            let migrated = settings::migrate(&m, from, &p["settings"])?;
+            if migrated != p["settings"] || from != settings::version(&m) {
+                p["revision"] = json!(p["revision"]
+                    .as_u64()
+                    .unwrap()
+                    .checked_add(1)
+                    .ok_or("Revision exhausted")?);
+            }
+            p["settings"] = migrated;
+            p["settingsVersion"] = json!(settings::version(&m));
+        }
+        let after = settings::checkpoint(&l["placements"], id);
         let relative = format!("versions/{id}/{}", nonce());
         let stage = self.data.join(&relative);
         fs::create_dir_all(&stage).map_err(err)?;
@@ -624,7 +671,9 @@ impl Registry {
                 fs::set_permissions(&to, fs::Permissions::from_mode(0o600)).map_err(err)?;
                 File::open(&to).map_err(err)?.sync_all().map_err(err)?;
             }
-            validate(&stage)?;
+            if validate(&stage)? != m {
+                return Err("Package changed during staging; retry the update".into());
+            }
             sync_tree(&stage)?;
             File::open(stage.parent().unwrap())
                 .map_err(err)?
@@ -642,7 +691,7 @@ impl Registry {
                 .as_ref()
                 .and_then(|p| p.strip_prefix(&self.data).ok())
                 .map(|p| p.to_string_lossy().to_string());
-            l["packages"][id] = json!({"current":relative,"previous":previous});
+            l["packages"][id] = json!({"current":relative,"previous":previous,"checkpoint":{"before":before,"after":after}});
             self.commit(&mut l)?;
             Ok(
                 json!({"installed":id,"updated":update,"revision":l["revision"],"restartRequired":true}),
@@ -662,10 +711,41 @@ impl Registry {
         }
         let current = l["packages"][id]["current"].clone();
         l["packages"][id]["current"] = previous;
-        if validate(&self.source(&l, id)?)?["id"] != id {
+        let target = validate(&self.source(&l, id)?)?;
+        if target["id"] != id {
             return Err("Rollback identity mismatch".into());
         }
+        let checkpoint = l["packages"][id]["checkpoint"].clone();
+        let before = settings::checkpoint(&l["placements"], id);
+        for (instance, p) in l["placements"]
+            .as_object_mut()
+            .unwrap()
+            .iter_mut()
+            .filter(|(_, p)| p["packageId"] == id)
+        {
+            if !target["families"].as_array().unwrap().contains(&p["size"]) {
+                return Err("Rollback does not support an existing instance size".into());
+            }
+            if p["settingsVersion"].as_u64().unwrap_or(1) != settings::version(&target) {
+                if before[instance] != checkpoint["after"][instance]
+                    || !checkpoint["before"][instance].is_object()
+                {
+                    return Err("Settings changed after update; rollback would overwrite them. Export settings and install a compatible package.".into());
+                }
+                p["settings"] = checkpoint["before"][instance]["settings"].clone();
+                p["settingsVersion"] = checkpoint["before"][instance]["settingsVersion"].clone();
+                p["revision"] = json!(p["revision"]
+                    .as_u64()
+                    .unwrap()
+                    .checked_add(1)
+                    .ok_or("Revision exhausted")?);
+            }
+            settings::validate(&target, &p["settings"])?;
+        }
         l["packages"][id]["previous"] = current;
+        l["packages"][id]["weatherGrant"] = Value::Null;
+        l["packages"][id]["checkpoint"] =
+            json!({"before":before,"after":settings::checkpoint(&l["placements"],id)});
         self.commit(&mut l)?;
         Ok(json!({"rolledBack":id,"revision":l["revision"]}))
     }
@@ -769,6 +849,8 @@ impl Registry {
                 {
                     return Err("Settings must be an object up to 8 KiB".into());
                 }
+                settings::validate(&m, &settings)?;
+                p["settingsVersion"] = json!(settings::version(&m));
                 p["settings"] = settings;
                 p["revision"] = json!(p["revision"]
                     .as_u64()
@@ -801,6 +883,8 @@ impl Registry {
             }
             _ => return Err("Unknown operation".into()),
         }
+        settings::validate(&m, &p["settings"])?;
+        p["settingsVersion"] = json!(settings::version(&m));
         if operation == "place" {
             grid::validate_change(&instance, p, &current, &desktop)?;
         } else if operation == "workspace" && p["enabled"] == true {
@@ -945,6 +1029,10 @@ fn run(args: &[String]) -> Result<Value> {
         return Ok(json!(true));
     }
 
+    if cmd == "package-control" && args.len() == 3 {
+        let r = Registry::from_env()?;
+        return r.package_control(&args[1], &args[2]);
+    }
     if cmd == "weather-permission" && args.len() == 3 {
         return weather::grant(&Registry::from_env()?, &args[1], &args[2]);
     }
@@ -1657,5 +1745,90 @@ mod tests {
             &r.layout().unwrap(),
             "io.example.test"
         ));
+    }
+    #[test]
+    fn migrations_checkpoint_rollback_and_post_update_edits() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        r.placement("io.example.test", "configure", Some(r#"{"city":"Paris"}"#))
+            .unwrap();
+        let original = r.layout().unwrap();
+        let mut m = manifest(&src).unwrap();
+        m["settingsVersion"] = json!(2);
+        m["defaults"] = json!({"label":"London"});
+        m["settingsSchema"] =
+            json!({"type":"object","properties":{"label":{"type":"string"}},"required":["label"]});
+        atomic_json(&src.join("widget.json"), &m).unwrap();
+        assert!(r.deploy(&src, true).is_err());
+        assert_eq!(r.layout().unwrap(), original);
+        m["migrations"] = json!([{"from":1,"to":2,"rename":{"city":"label"}}]);
+        atomic_json(&src.join("widget.json"), &m).unwrap();
+        r.deploy(&src, true).unwrap();
+        let migrated = r.layout().unwrap();
+        assert_eq!(
+            migrated["placements"]["io.example.test"]["settings"],
+            json!({"label":"Paris"})
+        );
+        r.placement("io.example.test", "hide", None).unwrap();
+        r.rollback("io.example.test").unwrap();
+        let rolled = r.layout().unwrap();
+        assert_eq!(
+            rolled["placements"]["io.example.test"]["settings"],
+            json!({"city":"Paris"})
+        );
+        assert_eq!(rolled["placements"]["io.example.test"]["enabled"], false);
+        assert_eq!(
+            rolled["packages"]["io.example.test"]["current"],
+            original["packages"]["io.example.test"]["current"]
+        );
+        r.rollback("io.example.test").unwrap();
+        r.placement("io.example.test", "configure", Some(r#"{"label":"Tokyo"}"#))
+            .unwrap();
+        let edited = r.layout().unwrap();
+        assert!(r.rollback("io.example.test").is_err());
+        assert_eq!(r.layout().unwrap(), edited);
+        assert!(r
+            .placement("io.example.test", "configure", Some(r#"{"label":12}"#))
+            .is_err());
+        assert_eq!(r.layout().unwrap(), edited);
+    }
+    #[test]
+    fn package_fault_controls_preserve_instances_and_reset_serial() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        let before = r.layout().unwrap()["placements"].clone();
+        r.package_control("io.example.test", "disable").unwrap();
+        assert_eq!(r.snapshot().unwrap()["catalog"][0]["packageDisabled"], true);
+        let serial = r.layout().unwrap()["runtime"]["packageControls"]["io.example.test"]["serial"]
+            .as_u64()
+            .unwrap();
+        r.package_control("io.example.test", "restart").unwrap();
+        let state = r.layout().unwrap();
+        assert_eq!(
+            state["runtime"]["packageControls"]["io.example.test"]["disabled"],
+            false
+        );
+        assert!(
+            state["runtime"]["packageControls"]["io.example.test"]["serial"]
+                .as_u64()
+                .unwrap()
+                > serial
+        );
+        assert_eq!(state["placements"], before);
+        assert!(r.package_control("io.example.test", "exec").is_err());
     }
 }
