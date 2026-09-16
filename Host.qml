@@ -100,7 +100,8 @@ Item {
                 if(JSON.stringify(root.catalog)!==JSON.stringify(response.catalog || [])) root.catalog=response.catalog || [];
                 if(JSON.stringify(root.retained)!==JSON.stringify(response.retained || [])) root.retained=response.retained || [];
                 root.occupancy=response.occupancy || [];
-                root.desktop=response.desktop || ({available:false,monitors:{}});
+                var desktop=response.desktop || ({available:false,monitors:{}});
+                if(JSON.stringify(root.desktop)!==JSON.stringify(desktop)) root.desktop=desktop;
                 if(response.runtime) {
                     root.shown=response.runtime.shown !== false;
                     root.editing=response.runtime.editing === true;
@@ -125,7 +126,7 @@ Item {
     }
     function screenFor(name) {
         for (var i=0; i<Quickshell.screens.length; i++) if (Quickshell.screens[i].name === name) return Quickshell.screens[i];
-        return Quickshell.screens.length ? Quickshell.screens[0] : null;
+        return !name && Quickshell.screens.length ? Quickshell.screens[0] : null;
     }
     Component.onCompleted: refresh()
     Timer { interval:1000; running:true; repeat:true; onTriggered:root.refresh() }
@@ -238,7 +239,8 @@ Item {
             property real positionX: effective ? effective.x : 0
             property real positionY: effective ? effective.y : 0
             property bool moving: false
-            onEffectiveChanged: if(!moving) resetPosition()
+            readonly property string geometryKey: JSON.stringify({effective:effective,grid:grid,workspace:config.workspace})
+            onGeometryKeyChanged: { moving=false; resetPosition(); }
             function resetPosition() { positionX=effective ? effective.x : 0; positionY=effective ? effective.y : 0; }
             readonly property var target: grid ? Grid.target(positionX,positionY,sizeName,effective.monitor,config.workspace,grid) : null
             readonly property bool validTarget: !!target && Grid.valid(target,grid,root.occupancy.filter(function(_,i) { return i!==entry.occupancyIndex; }))

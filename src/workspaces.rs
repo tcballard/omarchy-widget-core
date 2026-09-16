@@ -17,10 +17,16 @@ fn parse(bytes: &[u8]) -> Result<Value> {
         .ok_or("Invalid monitor list")?;
     let mut result = serde_json::Map::new();
     for monitor in monitors {
+        if monitor["disabled"] == true {
+            continue;
+        }
         let name = monitor["name"]
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 120)
             .ok_or("Invalid monitor name")?;
+        if result.contains_key(name) {
+            return Err("Duplicate monitor name".into());
+        }
         let workspace = &monitor["activeWorkspace"];
         // Current Hyprland uses an address; older builds use an integer id.
         let id = if let Some(id) = workspace["id"].as_i64() {
