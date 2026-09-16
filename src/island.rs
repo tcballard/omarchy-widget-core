@@ -76,6 +76,9 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
                 entry["directory"] = json!("/widget");
             }
             snapshot["problems"] = json!([]);
+            // Management metadata never crosses a package's broker boundary.
+            snapshot["catalog"] = json!([]);
+            snapshot["retained"] = json!([]);
             snapshot["runtime"]["managerOpen"] = json!(false);
             let edit = snapshot["runtime"]["edit"]["instance"]
                 .as_str()
@@ -435,11 +438,16 @@ mod tests {
         assert_eq!(snapshot["installed"].as_array().unwrap().len(), 1);
         assert!(!snapshot.to_string().contains("io.test.b"));
         assert_eq!(snapshot["installed"][0]["directory"], "/widget");
+        assert_eq!(snapshot["catalog"], json!([]));
+        assert_eq!(snapshot["retained"], json!([]));
         for args in [
             vec!["save", "io.test.b", r#"{"revision":0,"settings":{}}"#],
             vec!["hide", "io.test.b"],
             vec!["workspace", "io.test.b", "2"],
             vec!["remove", "io.test.a"],
+            vec!["remove-instance", "io.test.a"],
+            vec!["uninstall", "io.test.a", "delete"],
+            vec!["create", "io.test.a", "medium"],
             vec!["install", "/widget"],
             vec!["configure", "io.test.a", "{}"],
         ] {

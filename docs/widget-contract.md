@@ -62,3 +62,41 @@ Snapshots include `desktop: {available, monitors, error?}`. `monitors` maps outp
 ## Cell placement extension
 
 See [grid-layout.md](grid-layout.md) for complete geometry, migration and fallback rules. `place INSTANCE_ID JSON` now requires `{column,row,monitor,size}` with nonnegative integer cell coordinates and a supported family. Writes validate current occupancy under the registry lock. The stored `placement.cell` and `placement.monitor` are preferences; per-entry `effective` is the resolved logical rectangle or null when unplaced. Snapshot `desktop.grids` supplies cell dimensions and usable bounds, `desktop.frame` supplies border/rounding, and `occupancy` supplies anonymous rectangles for preview. An entry's `occupancyIndex` identifies its own rectangle. Renderers do not receive other packages' identities or settings through occupancy.
+
+
+## Manager extension (milestone 2)
+
+The trusted `list` response adds `catalog` (one row per installed package, with
+manifest, directory, instance count and optional problem) and `retained` (saved
+instances whose package was uninstalled). Existing `installed` entries keep their
+shape. Catalog and retained metadata are stripped from package broker snapshots;
+management operations remain unavailable to widget runners.
+
+New commands:
+
+- `create PACKAGE_ID FAMILY`: a fresh identity/settings object from defaults with
+  a supported Small/Medium/Large family. It never reuses an existing instance.
+- `remove-instance INSTANCE_ID`: delete only the named instance, including a
+  retained instance. Clear any pending editor request for it. Stale revisioned
+  saves cannot recreate a removed instance. Legacy unconditional `configure` and
+  initial `place` behaviour remain available for CLI compatibility.
+- `uninstall PACKAGE_ID keep|delete`: unregister the package and stop its runners;
+  either retain its instances hidden or delete them. Retained code directories
+  are not garbage-collected. Reinstallation preserves kept settings and positions
+  but never automatically shows the retained instances. A replacement package
+  must support all saved instance families, or installation/update fails without
+  changing the registry.
+
+`duplicate` copies current settings and placement preferences into a new identity;
+`create` uses manifest defaults. `add` still shows an existing instance or creates
+the legacy package-ID instance. `remove PACKAGE_ID` retains its old destructive
+meaning as an alias for `uninstall PACKAGE_ID delete`.
+
+Optional manifest `previews` maps supported family names to relative `.png` paths,
+for example `{"small":"previews/small.png"}`. Core validates package containment,
+regular-file status, a maximum 512 KiB per image, PNG signature and IHDR dimensions
+of 1–1024 pixels. This is structural/bounds validation, not a full PNG decoder.
+The manager displays static artwork only, using a labelled footprint when absent
+or undecodable. Preview QML, network URLs and executable preview generators are
+not supported. The renderer is still untrusted; these assets are not a security
+review or an authenticity guarantee.

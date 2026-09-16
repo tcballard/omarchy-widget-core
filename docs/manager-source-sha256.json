@@ -1,0 +1,11 @@
+{
+  "Host.qml": "62a77506daa1d13662f00684e65f6ae67c564ff01472990b3f01f89b4e666032",
+  "qml/Manager.qml": "b838c351cee3ca071b4ce1387ce785bcc61661095ecf6f69b6a0c9a2c3496de5",
+  "qml/FamilyPreview.qml": "63d96ac87796e4425150eb5265dfb71c52a42bbe28ab34f6c4e90c7507b08de8",
+  "qml/RegistryQueue.qml": "d2aef4df9e7e75de13e38c9f0b983df6d4c0d6a69e5c8162ff28c0cc887731d3",
+  "src/main.rs": "b5a2574ef7c8013c66511d85cbb262870834010bd5aeb46917d0cf7e6763258b",
+  "src/island.rs": "6c25d975819acd9c97bc750db891ca435e97602fc9a0165cfc8c6b3d00ad04d0",
+  "tests/manager_integration.py": "e5aee6c7e39df434dffcee5920e3c835f546c18ac4b931f0593d37c76cb7a84d",
+  "tests/qt_process.py": "a9d009a94c4a8b08e7bcbdf8a635075193fb483a778bf01b7d8d6bb739ddc16a",
+  "tests/worldclock_integration.py": "3ba62ffc75d37fdee2a1ce54f2318e67168f1cbf2a92fda573de289cc2482ef6"
+}

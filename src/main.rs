@@ -135,6 +135,41 @@ fn manifest(dir: &Path) -> Result<Value> {
             return Err("Invalid settingsEntryPoint".into());
         }
     }
+    if let Some(previews) = v.get("previews") {
+        for (size, path) in previews
+            .as_object()
+            .ok_or("Previews must be a family-to-PNG object")?
+        {
+            if !families.contains(size) {
+                return Err("Preview family is not supported".into());
+            }
+            let path = path.as_str().ok_or("Preview path must be a string")?;
+            if !safe_relative(path) || !path.ends_with(".png") {
+                return Err("Preview must be a relative PNG path".into());
+            }
+            let file = dir.join(path);
+            let meta = fs::symlink_metadata(&file).map_err(err)?;
+            if !meta.is_file()
+                || meta.len() > 512 * 1024
+                || !file.canonicalize().map_err(err)?.starts_with(&canonical)
+            {
+                return Err("Preview must be a bounded package PNG".into());
+            }
+            let mut header = [0; 24];
+            File::open(file)
+                .map_err(err)?
+                .read_exact(&mut header)
+                .map_err(err)?;
+            if &header[..8] != b"\x89PNG\r\n\x1a\n"
+                || &header[12..16] != b"IHDR"
+                || ![16, 20].iter().all(|i| {
+                    (1..=1024).contains(&u32::from_be_bytes(header[*i..*i + 4].try_into().unwrap()))
+                })
+            {
+                return Err("Preview must be PNG with dimensions from 1 to 1024".into());
+            }
+        }
+    }
     Ok(v)
 }
 fn walk(dir: &Path, relative: &Path, out: &mut Vec<PathBuf>, bytes: &mut u64) -> Result<()> {
@@ -452,6 +487,7 @@ impl Registry {
         }
         let effective = grid::resolve(&l["placements"], &desktop);
         let mut widgets = Vec::new();
+        let mut catalog = Vec::new();
         let mut problems = Vec::new();
         let theme_file = self
             .state
@@ -475,6 +511,15 @@ impl Registry {
                 .and_then(|path| manifest(&path).map(|m| (path, m)));
             match validated {
                 Ok((path, m)) if m["id"] == id => {
+                    let count = l["placements"]
+                        .as_object()
+                        .unwrap()
+                        .values()
+                        .filter(|p| p["packageId"] == id)
+                        .count();
+                    catalog.push(
+                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count}),
+                    );
                     let mut found = false;
                     for (instance, p) in l["placements"].as_object().unwrap() {
                         if p["packageId"] != id {
@@ -487,14 +532,23 @@ impl Registry {
                         widgets.push(json!({"instanceId":id,"packageId":id,"definitionId":"main","manifest":m,"directory":path,"placement":null}));
                     }
                 }
-                _ => problems.push(format!(
-                    "Invalid package: {}",
-                    id.chars().take(100).collect::<String>()
-                )),
+                _ => {
+                    let problem = format!(
+                        "Invalid package: {}",
+                        id.chars().take(100).collect::<String>()
+                    );
+                    problems.push(problem.clone());
+                    catalog.push(json!({"packageId":id,"manifest":{"id":id,"name":id,"version":"unavailable","families":[]},"instanceCount":l["placements"].as_object().unwrap().values().filter(|p|p["packageId"]==id).count(),"problem":problem}));
+                }
             }
         }
+        let installed_ids = self.ids(&l)?;
+        let retained: Vec<Value> = l["placements"].as_object().unwrap().iter()
+            .filter(|(_, p)| !installed_ids.contains(p["packageId"].as_str().unwrap()))
+            .map(|(id,p)| json!({"instanceId":id,"packageId":p["packageId"],"name":l["packages"][p["packageId"].as_str().unwrap()]["name"],"placement":p}))
+            .collect();
         Ok(
-            json!({"api":2,"revision":l["revision"],"installed":widgets,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"],"desktop":desktop,"occupancy":effective.as_object().unwrap().values().cloned().collect::<Vec<_>>()}),
+            json!({"api":2,"revision":l["revision"],"installed":widgets,"catalog":catalog,"retained":retained,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"],"desktop":desktop,"occupancy":effective.as_object().unwrap().values().cloned().collect::<Vec<_>>()}),
         )
     }
     fn install(&self, source: &Path) -> Result<Value> {
@@ -506,6 +560,11 @@ impl Registry {
         let id = m["id"].as_str().unwrap();
         let mut l = self.layout()?;
         let old = self.source(&l, id).ok().filter(|p| p.exists());
+        if l["placements"].as_object().unwrap().values().any(|p| {
+            p["packageId"] == id && !m["families"].as_array().unwrap().contains(&p["size"])
+        }) {
+            return Err("Package does not support a saved instance size; remove that instance or install a compatible version".into());
+        }
         if old.is_some() && !update {
             return Err("Already installed; use update PATH (settings are preserved)".into());
         }
@@ -589,6 +648,9 @@ impl Registry {
         }
         let mut l = self.layout()?;
         let desktop = desktop();
+        if l["placements"][id].is_null() && operation == "save" {
+            return Err("Unknown widget instance; add it before changing it".into());
+        }
         grid::migrate(&mut l["placements"], &desktop);
         let current = grid::resolve(&l["placements"], &desktop);
         let package_id = l["placements"][id]["packageId"]
@@ -596,7 +658,12 @@ impl Registry {
             .unwrap_or(id)
             .to_owned();
         let m = manifest(&self.source(&l, &package_id)?)?;
-        let instance = if operation == "duplicate" {
+        let instance = if operation == "create" {
+            if package_id != id {
+                return Err("Create requires a package ID".into());
+            }
+            format!("instance-{}", nonce())
+        } else if operation == "duplicate" {
             if l["placements"][id].is_null() {
                 return Err("Add the widget before duplicating".into());
             }
@@ -617,6 +684,15 @@ impl Registry {
             *p = json!({"packageId":package_id,"definitionId":"main","revision":0,"enabled":false,"x":0,"y":0,"monitor":"","cell":{"column":0,"row":0},"size":m["defaultFamily"],"settings":m["defaults"]});
         }
         match operation {
+            "create" => {
+                let size = value.ok_or("Choose a widget family")?;
+                if !m["families"].as_array().unwrap().contains(&json!(size)) {
+                    return Err("Unsupported widget family".into());
+                }
+                p["size"] = json!(size);
+                p["enabled"] = json!(true);
+                p["activationOrder"] = json!(activation_order);
+            }
             "add" | "duplicate" => {
                 if p["enabled"] != true || operation == "duplicate" {
                     p["activationOrder"] = json!(activation_order);
@@ -699,7 +775,10 @@ impl Registry {
                 grid::validate_change(&instance, &target, &current, &desktop)?;
             }
         }
-        if operation == "duplicate" || (operation == "add" && p["monitor"] == "") {
+        if operation == "create"
+            || operation == "duplicate"
+            || (operation == "add" && p["monitor"] == "")
+        {
             // New instances reserve a free preference; existing hidden instances keep theirs.
             let resolved = grid::resolve(&l["placements"], &desktop);
             if let Some(c) = resolved.get(&instance) {
@@ -712,16 +791,66 @@ impl Registry {
         Ok(json!({"updated":instance,"placement":placement,"revision":l["revision"]}))
     }
     fn remove(&self, id: &str) -> Result<Value> {
+        self.uninstall(id, "delete")
+    }
+    fn remove_instance(&self, id: &str) -> Result<Value> {
         let _lock = self.lock()?;
         let mut l = self.layout()?;
-        validate(&self.source(&l, id)?)?;
-        l["packages"][id] = json!({"current":null,"previous":null});
-        l["placements"]
+        if l["placements"]
             .as_object_mut()
             .unwrap()
-            .retain(|_, p| p["packageId"] != id);
+            .remove(id)
+            .is_none()
+        {
+            return Err("Unknown widget instance".into());
+        }
+        if l["runtime"]["edit"]["instance"] == id {
+            l["runtime"]["edit"] = Value::Null;
+        }
         self.commit(&mut l)?;
-        Ok(json!({"removed":id,"revision":l["revision"]}))
+        Ok(json!({"removedInstance":id,"revision":l["revision"]}))
+    }
+    fn uninstall(&self, id: &str, policy: &str) -> Result<Value> {
+        if !["keep", "delete"].contains(&policy) {
+            return Err("Choose uninstall PACKAGE_ID keep|delete".into());
+        }
+        let _lock = self.lock()?;
+        let mut l = self.layout()?;
+        self.package(id)?;
+        if !self.ids(&l)?.contains(id) {
+            return Err("Package is not installed".into());
+        }
+        let name = self
+            .source(&l, id)
+            .and_then(|p| manifest(&p))
+            .ok()
+            .map(|m| m["name"].clone())
+            .unwrap_or(json!(id));
+        let edit = l["runtime"]["edit"]["instance"]
+            .as_str()
+            .unwrap_or("")
+            .to_owned();
+        if l["placements"][&edit]["packageId"] == id {
+            l["runtime"]["edit"] = Value::Null;
+        }
+        l["packages"][id] = json!({"current":null,"previous":null,"name":name});
+        if policy == "delete" {
+            l["placements"]
+                .as_object_mut()
+                .unwrap()
+                .retain(|_, p| p["packageId"] != id);
+        } else {
+            for p in l["placements"]
+                .as_object_mut()
+                .unwrap()
+                .values_mut()
+                .filter(|p| p["packageId"] == id)
+            {
+                p["enabled"] = json!(false);
+            }
+        }
+        self.commit(&mut l)?;
+        Ok(json!({"removed":id,"savedInstances":policy,"revision":l["revision"]}))
     }
 }
 fn sync_tree(dir: &Path) -> Result<()> {
@@ -775,14 +904,14 @@ fn run(args: &[String]) -> Result<Value> {
 
     if cmd == "help" {
         return Ok(
-            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
         "list" => 1,
         "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide"
-        | "remove" | "control" => 2,
-        "place" | "configure" | "save" | "workspace" => 3,
+        | "remove" | "remove-instance" | "control" => 2,
+        "place" | "configure" | "save" | "workspace" | "create" | "uninstall" => 3,
         _ => return Err("Unknown command".into()),
     };
     if args.len() != required {
@@ -799,6 +928,8 @@ fn run(args: &[String]) -> Result<Value> {
         "update" => r.deploy(Path::new(&args[1]), true),
         "rollback" => r.rollback(&args[1]),
         "remove" => r.remove(&args[1]),
+        "remove-instance" => r.remove_instance(&args[1]),
+        "uninstall" => r.uninstall(&args[1], &args[2]),
         _ => r.placement(&args[1], cmd, args.get(2).map(String::as_str)),
     }
 }
@@ -841,6 +972,199 @@ mod tests {
         fs::create_dir_all(p).unwrap();
         fs::write(p.join("View.qml"), "import QtQuick\nItem {}\n").unwrap();
         fs::write(p.join("widget.json"),json!({"schemaVersion":1,"kind":"desktop-widget","coreApi":1,"id":"io.example.test","name":"Contract fixture","version":"0.1.0","entryPoint":"View.qml","defaultSize":"standard","sizes":{"standard":{"width":300,"height":200}},"defaults":{}}).to_string()).unwrap();
+    }
+    #[test]
+    fn manager_create_uses_defaults_and_duplicate_copies_only_its_source() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        let id = r
+            .placement("io.example.test", "create", Some("medium"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        r.placement(&id, "configure", Some(r#"{"city":"London"}"#))
+            .unwrap();
+        r.placement(&id, "workspace", Some("3")).unwrap();
+        let duplicate = r.placement(&id, "duplicate", None).unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let fresh = r
+            .placement("io.example.test", "create", Some("medium"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let l = r.layout().unwrap();
+        assert_ne!(id, duplicate);
+        assert_ne!(id, fresh);
+        assert_ne!(duplicate, fresh);
+        assert_eq!(l["placements"][&duplicate]["settings"]["city"], "London");
+        assert_eq!(l["placements"][&duplicate]["workspace"], 3);
+        assert_eq!(l["placements"][&fresh]["settings"], json!({}));
+        assert!(l["placements"][&fresh]["workspace"].is_null());
+        assert!(r
+            .placement("io.example.test", "create", Some("large"))
+            .is_err());
+        assert_eq!(r.layout().unwrap(), l);
+        let snapshot = r.snapshot().unwrap();
+        assert_eq!(snapshot["catalog"].as_array().unwrap().len(), 1);
+        assert_eq!(snapshot["catalog"][0]["instanceCount"], 3);
+    }
+    #[test]
+    fn remove_one_instance_preserves_siblings_and_rejects_old_editor() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        let other = r.placement("io.example.test", "duplicate", None).unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let before = r.layout().unwrap()["placements"][&other].clone();
+        let mut l = r.layout().unwrap();
+        l["runtime"] = json!({"edit":{"instance":"io.example.test","serial":1}});
+        r.commit(&mut l).unwrap();
+        r.remove_instance("io.example.test").unwrap();
+        assert!(r.layout().unwrap()["runtime"]["edit"].is_null());
+        assert_eq!(r.layout().unwrap()["placements"][&other], before);
+        assert!(r
+            .placement(
+                "io.example.test",
+                "save",
+                Some(r#"{"revision":0,"settings":{"city":"resurrected"}}"#)
+            )
+            .is_err());
+        assert!(r.remove_instance("missing").is_err());
+        assert_eq!(
+            r.snapshot().unwrap()["catalog"].as_array().unwrap().len(),
+            1
+        );
+    }
+    #[test]
+    fn uninstall_keep_preserves_hidden_instances_and_reinstall_does_not_activate() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        r.placement("io.example.test", "configure", Some(r#"{"city":"Paris"}"#))
+            .unwrap();
+        let mut expected = r.layout().unwrap()["placements"]["io.example.test"].clone();
+        expected["enabled"] = json!(false);
+        assert!(r.uninstall("io.example.test", "guess").is_err());
+        r.uninstall("io.example.test", "keep").unwrap();
+        let snapshot = r.snapshot().unwrap();
+        assert_eq!(snapshot["installed"], json!([]));
+        assert_eq!(snapshot["catalog"], json!([]));
+        assert_eq!(snapshot["retained"][0]["placement"], expected);
+        assert!(r.rollback("io.example.test").is_err());
+        assert!(r
+            .placement(
+                "io.example.test",
+                "save",
+                Some(r#"{"revision":1,"settings":{}}"#)
+            )
+            .is_err());
+        r.install(&src).unwrap();
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.test"],
+            expected
+        );
+        assert_eq!(r.snapshot().unwrap()["retained"], json!([]));
+        r.placement("io.example.test", "add", None).unwrap();
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.test"]["settings"]["city"],
+            "Paris"
+        );
+    }
+    #[test]
+    fn uninstall_delete_and_retained_instance_removal_preserve_other_packages() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        let mut m = manifest(&src).unwrap();
+        m["id"] = json!("io.example.other");
+        fs::write(src.join("widget.json"), m.to_string()).unwrap();
+        r.install(&src).unwrap();
+        r.placement("io.example.other", "add", None).unwrap();
+        let before = r.layout().unwrap()["placements"]["io.example.other"].clone();
+        r.uninstall("io.example.test", "keep").unwrap();
+        r.remove_instance("io.example.test").unwrap();
+        assert_eq!(r.snapshot().unwrap()["retained"], json!([]));
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.other"],
+            before
+        );
+        r.uninstall("io.example.other", "delete").unwrap();
+        assert_eq!(r.layout().unwrap()["placements"], json!({}));
+        r.install(&src).unwrap();
+        assert!(r.snapshot().unwrap()["installed"][0]["placement"].is_null());
+    }
+    #[test]
+    fn invalid_packages_are_visible_and_can_be_uninstalled() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        let path = r.source(&r.layout().unwrap(), "io.example.test").unwrap();
+        fs::write(path.join("widget.json"), "broken").unwrap();
+        assert!(r.snapshot().unwrap()["catalog"][0]["problem"].is_string());
+        r.uninstall("io.example.test", "delete").unwrap();
+        assert_eq!(r.snapshot().unwrap()["catalog"], json!([]));
+    }
+    #[test]
+    fn package_previews_are_local_bounded_pngs_for_supported_families() {
+        let t = Temp::new();
+        fixture(&t.0);
+        let mut m = read_json(&t.0.join("widget.json"), 16384).unwrap();
+        m["previews"] = json!({"medium":"preview.png"});
+        fs::write(t.0.join("widget.json"), m.to_string()).unwrap();
+        assert!(validate(&t.0).is_err());
+        let mut header = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        header.extend(400_u32.to_be_bytes());
+        header.extend(200_u32.to_be_bytes());
+        fs::write(t.0.join("preview.png"), &header).unwrap();
+        assert!(validate(&t.0).is_ok()); // Header bounds only; Qt handles decode failure with a footprint fallback.
+        header[16..20].copy_from_slice(&2000_u32.to_be_bytes());
+        fs::write(t.0.join("preview.png"), &header).unwrap();
+        assert!(validate(&t.0).is_err());
+        for previews in [
+            json!({"medium":"../outside.png"}),
+            json!({"medium":"https://example.com/a.png"}),
+            json!({"large":"preview.png"}),
+            json!({"medium":"View.qml"}),
+        ] {
+            m["previews"] = previews;
+            fs::write(t.0.join("widget.json"), m.to_string()).unwrap();
+            assert!(validate(&t.0).is_err());
+        }
     }
     #[test]
     fn workspace_assignment_preserves_settings_and_layout() {
