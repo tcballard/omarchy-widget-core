@@ -25,6 +25,8 @@ Item {
     property var saveStates: ({})
     property var placementErrors: ({})
     property string configuring: ""
+    property int settingsGeneration: 0
+    property string editorError: ""
     readonly property string helper: decodeURIComponent(Qt.resolvedUrl("bin/omarchy-widget").toString().replace(/^file:\/\//, ""))
     function entry(id) {
         for (var i=0;i<installed.length;i++) if(installed[i].instanceId === id) return installed[i];
@@ -39,18 +41,30 @@ Item {
     function control(method) { return execute(["control",method]); }
     function save(id, value, revision) {
         if (saveStates[id] && saveStates[id].saving) return false;
-        if (!execute(["save",id,JSON.stringify({revision:revision,settings:value})],id)) return false;
+        var token={instance:id,generation:configuring===id?settingsGeneration:-1};
+        if (!execute(["save",id,JSON.stringify({revision:revision,settings:value})],token)) return false;
         var states=Object.assign({},saveStates); states[id]={saving:true,error:"",saved:false}; saveStates=states;
         return true;
     }
     function closeSettings() {
         if(configuring && editSerial) execute(["edit-done",configuring,editSerial]);
         configuring="";
+        settingsGeneration++;
+        settingsLoader.source="";
+        settingsContext.draftSettings=({});
+        editorError="";
     }
     function configure(id) {
         if(managerRole) { execute(["edit",id]); return; }
+        // Repeated gear presses must not reset an unsaved draft.
+        if(configuring===id) return;
+        if(configuring!=="") { editorError="Save or cancel this editor before configuring another widget."; return; }
+        if(saveStates[id] && saveStates[id].saving) { error="This widget is still saving. Please retry after it finishes."; return; }
         var item=entry(id);
-        if(!item || !item.manifest.settingsEntryPoint) { error="This widget provides its own settings editor."; return; }
+        if(!item || !item.placement || !item.manifest.settingsEntryPoint) { error="This widget has no available settings editor."; return; }
+        settingsGeneration++;
+        editorError="";
+        var states=Object.assign({},saveStates); delete states[id]; saveStates=states;
         settingsContext.draftSettings=JSON.parse(JSON.stringify(item.placement.settings));
         settingsContext.revision=item.placement.revision;
         configuring=id;
@@ -62,9 +76,10 @@ Item {
         onCompleted: function(request,success,response,message) {
             root.error=message;
             if(request.token) {
+                var id=request.token.instance;
                 var states=Object.assign({},root.saveStates);
-                states[request.token]={saving:false,error:message,saved:success}; root.saveStates=states;
-                if(success && root.configuring===request.token) root.closeSettings();
+                states[id]={saving:false,error:message,saved:success}; root.saveStates=states;
+                if(success && root.configuring===id && root.settingsGeneration===request.token.generation) root.closeSettings();
             }
             if(request.args[0]==="place" || request.args[0]==="workspace") {
                 var placementErrors=Object.assign({},root.placementErrors);
@@ -82,7 +97,7 @@ Item {
                     root.editing=response.runtime.editing === true;
                     root.managerOpen=root.managerRole && response.runtime.managerOpen === true;
                     var edit=response.runtime.edit;
-                    if(!root.managerRole && edit && String(edit.serial)!==root.editSerial) {
+                    if(!root.managerRole && root.configuring==="" && edit && String(edit.serial)!==root.editSerial) {
                         root.editSerial=String(edit.serial); root.configure(edit.instance);
                     }
                 }
@@ -153,11 +168,13 @@ Item {
         implicitHeight: Style.space(560)
         color: "transparent"
         Core.SettingsPanel {
+            objectName: "settings-panel"
             anchors.fill: parent
             busy: !!(root.saveStates[root.configuring] && root.saveStates[root.configuring].saving)
-            error: root.saveStates[root.configuring] ? root.saveStates[root.configuring].error : ""
+            canSave: settingsLoader.status===Loader.Ready
+            error: root.editorError || (settingsLoader.status===Loader.Error ? "The widget settings editor could not load. Cancel and check the package." : "") || (root.saveStates[root.configuring] ? root.saveStates[root.configuring].error : "")
             onCancelRequested: root.closeSettings()
-            onSaveRequested: root.save(root.configuring,settingsContext.draftSettings,settingsContext.revision)
+            onSaveRequested: if(canSave) root.save(root.configuring,settingsContext.draftSettings,settingsContext.revision)
             Loader { id:settingsLoader; anchors.fill:parent; active:root.configuring!=="" }
         }
     }

@@ -31,6 +31,14 @@ The optional editor declares `required property var settingsContext`. It renders
 
 Cancel discards the draft. Save sends `{revision,settings}`. A stale revision fails without overwriting durable settings. Core retains the failed draft; cancel/reopen to load newer settings. Widget-specific field validation remains the widget author's responsibility; Core enforces object and byte limits.
 
+Opening the same instance's editor again retains the current draft. Finish with
+Save or Cancel before opening a different instance in the same package runner.
+Save is unavailable until the editor loads successfully. A save acknowledgement
+belongs to the editor generation that issued it; it cannot close a later editor.
+Embedded editors must let unhandled Escape events propagate to Core's Cancel
+handling. Closing destroys the editor and clears its draft; reopening starts
+from acknowledged settings and clears previous save errors.
+
 ## Registry commands
 
 The Rust helper prints one JSON response and exits nonzero on failure. `list` returns API 2, registry revision, palette, appearance, installed entries and problems. Each entry includes manifest, immutable code directory, identity and placement. Each write response includes the committed placement and registry revision where applicable.
