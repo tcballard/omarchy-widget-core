@@ -41,8 +41,12 @@ Item {
     function control(method) { return execute(["control",method]); }
     function save(id, value, revision) {
         if (saveStates[id] && saveStates[id].saving) return false;
+        if(configuring===id) editorError="";
         var token={instance:id,generation:configuring===id?settingsGeneration:-1};
-        if (!execute(["save",id,JSON.stringify({revision:revision,settings:value})],token)) return false;
+        if (!execute(["save",id,JSON.stringify({revision:revision,settings:value})],token)) {
+            if(configuring===id) editorError=error;
+            return false;
+        }
         var states=Object.assign({},saveStates); states[id]={saving:true,error:"",saved:false}; saveStates=states;
         return true;
     }

@@ -209,6 +209,7 @@ Window {
     QMetaObject.invokeMethod(editor, 'add', Q_ARG('QVariant', 'Asia/Kathmandu'))
     concurrent = dict(original[second]['settings'], displayMode='analogue')
     cli('save', second, json.dumps({'revision': original[second]['revision'], 'settings': concurrent}))
+    assert call(controller, 'openEditor', first) == second
     button('save-button')
     spin(lambda: 'changed elsewhere' in panel.property('error'), 'Stale Save was not rejected')
     assert draft()['cities'][-1]['zone'] == 'Asia/Kathmandu'

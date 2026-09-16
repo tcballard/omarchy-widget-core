@@ -14,7 +14,8 @@ verification; no live Omarchy session is available in the build environment.
    (`feat/widget-foundation` → `feat/clock-faces-and-settings`) fixes embedded
    Escape cancellation. Retarget after the parent merges. Its tested commit is
    `5cd7b0894376eb16d070fa244f4aeaea1448dd58`.
-3. Core `feat/widget-foundation` → `main` protects settings drafts and checks
+3. Core [PR #5](https://github.com/tcballard/omarchy-widget-core/pull/5)
+   (`feat/widget-foundation` → `main`) protects settings drafts and checks
    two real World Clock editors against production QML and the Rust registry.
    The CI fixture is pinned to the World Clock commit above; it does not follow
    an unreviewed moving branch.
