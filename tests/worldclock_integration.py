@@ -13,7 +13,7 @@ import tempfile
 import time
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-from PySide6.QtCore import QObject, Property, Signal, QProcess, QUrl, QMetaObject, Q_ARG, Q_RETURN_ARG, Qt
+from PySide6.QtCore import QObject, QUrl, QMetaObject, Q_ARG, Q_RETURN_ARG, Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 from PySide6.QtQuick import QQuickItem
@@ -24,40 +24,7 @@ binary = Path(sys.argv[1]).resolve()
 clock = Path(sys.argv[2]).resolve()
 
 
-class Process(QObject):
-    exited = Signal(int, int)
-    changed = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.cmd, self.out, self.run = [], None, False
-        self.child = QProcess(self)
-        self.child.finished.connect(self.finish)
-        self.child.errorOccurred.connect(self.failed)
-
-    command = Property('QVariantList', lambda s: s.cmd, lambda s, v: setattr(s, 'cmd', v), notify=changed)
-    stdout = Property(QObject, lambda s: s.out, lambda s, v: setattr(s, 'out', v), notify=changed)
-
-    def start(self, value):
-        if value:
-            self.run = True
-            self.changed.emit()
-            self.child.start(self.cmd[0], self.cmd[1:])
-        else:
-            self.child.kill()
-
-    running = Property(bool, lambda s: s.run, start, notify=changed)
-
-    def finish(self, code, status):
-        self.run = False
-        self.out.setProperty('text', bytes(self.child.readAllStandardOutput()).decode())
-        self.exited.emit(code, 0)
-        self.changed.emit()
-
-    def failed(self, error):
-        if error == QProcess.ProcessError.FailedToStart:
-            self.run = False
-            self.changed.emit()
+from qt_process import Process
 
 
 qmlRegisterType(Process, 'Quickshell.Io', 1, 0, 'Process')
@@ -236,5 +203,11 @@ Window {
     reopened = placements()  # Every CLI invocation is a fresh process reopening durable state.
     assert reopened[first]['settings'] == saved[first]['settings']
     assert reopened[second] == saved[second]
+    open_editor(first)
+    cli('remove-instance', first)
+    QMetaObject.invokeMethod(controller, 'refresh')
+    spin(lambda: call(controller, 'current') == '', 'Removing an instance left its editor open')
+    spin(lambda: not call(controller, 'pending'), 'Removal refresh did not settle')
+    assert placements()[second] == saved[second]
     assert not warnings, '\n'.join(warnings)
     print('PASS: two World Clocks; independent Save/Cancel/Escape; repeated open; old acknowledgement; stale conflict; hide/show and fresh-process reopen')

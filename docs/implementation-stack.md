@@ -19,7 +19,10 @@ verification; no live Omarchy session is available in the build environment.
    two real World Clock editors against production QML and the Rust registry.
    The CI fixture is pinned to the World Clock commit above; it does not follow
    an unreviewed moving branch.
-4. Subsequent Core branches target the preceding Core milestone branch. Record
+4. Core `feat/widgets-manager` → `feat/widget-foundation` implements milestone 2.
+   It adds the installed-type gallery, instance actions, previews and retained-state
+   uninstall. Its PR is based on Core #5, not main.
+5. Subsequent Core branches target the preceding Core milestone branch. Record
    actual PR URLs here as they are opened. Do not create empty placeholder PRs.
 
 ## Milestones and remaining work
@@ -27,7 +30,7 @@ verification; no live Omarchy session is available in the build environment.
 | Milestone | State | Deliverable / acceptance |
 | --- | --- | --- |
 | 1. Foundation + World Clock | Development implementation; portable checks reproduced | Independent Save/Cancel, stale revisions, duplicate identities, placement preservation and fresh-process reopen. Live settings windows and reboot remain unverified. |
-| 2. Widgets manager | Next | Available types versus instances; size previews; Add/Duplicate/Configure/Hide/Remove; separate instance removal and package uninstall with retained-state choice. |
+| 2. Widgets manager | Development implementation; portable tests reproduced | Available types versus instances; size previews; Add/Duplicate/Configure/Hide/Remove; separate instance removal and package uninstall with retained-state choice. |
 | 3. Desktop integration | Pending | Validate existing grid and inherited ricing; reserved bounds, scaling, hotplug, workspace occupancy and preference restoration. Preserve monitor-bound workspace semantics. |
 | 4. Quick reveal | Feasibility pending | Current filter denies overlays. Prototype Core-controlled reveal without importing widget QML into the trusted manager or granting permanent overlay privileges. Prove focus return, dismissal, lock behaviour and unchanged application placement on Hyprland. |
 | 5. Lifecycle + data | Pending | Explicit lifecycle, rendering versus background activity; one public weather broker with shared authorised caching, bounded fetches, permissions, stale data and retries. Keep renderer network denial. |
@@ -38,7 +41,7 @@ The quick-reveal feasibility work must precede its production implementation.
 Existing policy is intentionally unchanged by the foundation PR; that PR does not
 claim reveal is implemented or feasible under the unchanged policy.
 
-## Foundation verification reproduced locally
+## Foundation verification (historical, recorded in Core #5)
 
 Linux x86_64; Rust/Cargo 1.98.1; PySide6 6.11.2; offscreen Qt.
 Source inputs: Core main `dc96dd4a4dc72603cabaae4e7151f7c15c47c662` plus this PR;
@@ -64,6 +67,6 @@ Every CLI read reopens state in a fresh process; this is not a machine reboot.
 
 ## Next session
 
-Start with milestone 2 on top of Core `feat/widget-foundation`; inspect open PRs
-and heads first. Avoid duplicating World Clock #1. Carry forward the live desktop
+Start with milestone 3 on top of Core `feat/widgets-manager`; inspect open PRs
+and heads first. See `docs/manager-verification.md` for this turn’s evidence. Avoid duplicating World Clock #1. Carry forward the live desktop
 gates and the early reveal investigation. Update this record as each PR lands.

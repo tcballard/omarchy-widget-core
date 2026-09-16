@@ -15,6 +15,8 @@ Item {
     readonly property bool managerRole: Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"
     property string editSerial: ""
     property var installed: []
+    property var catalog: []
+    property var retained: []
     property var occupancy: []
     property var desktop: ({available:false,monitors:{}})
     property var themeAppearance: ({})
@@ -51,7 +53,7 @@ Item {
         return true;
     }
     function closeSettings() {
-        if(configuring && editSerial) execute(["edit-done",configuring,editSerial]);
+        if(configuring && editSerial && entry(configuring)) execute(["edit-done",configuring,editSerial]);
         configuring="";
         settingsGeneration++;
         settingsLoader.source="";
@@ -94,6 +96,9 @@ Item {
                 if(response.api !== 2 || !Array.isArray(response.installed)) { root.error="Unsupported Core response"; return; }
                 // Preserve delegate focus and in-progress manager edits during polling.
                 if(JSON.stringify(root.installed)!==JSON.stringify(response.installed)) root.installed=response.installed;
+                if(!root.managerRole && root.configuring!=="" && !root.entry(root.configuring)) root.closeSettings();
+                if(JSON.stringify(root.catalog)!==JSON.stringify(response.catalog || [])) root.catalog=response.catalog || [];
+                if(JSON.stringify(root.retained)!==JSON.stringify(response.retained || [])) root.retained=response.retained || [];
                 root.occupancy=response.occupancy || [];
                 root.desktop=response.desktop || ({available:false,monitors:{}});
                 if(response.runtime) {
@@ -135,8 +140,8 @@ Item {
     }
     PanelWindow {
         visible: root.managerOpen
-        implicitWidth: Style.space(540)
-        implicitHeight: Style.space(500)
+        implicitWidth: Math.min(Style.space(760),screen ? screen.width-Style.space(32) : Style.space(760))
+        implicitHeight: Math.min(Style.space(660),screen ? screen.height-Style.space(32) : Style.space(660))
         color: "transparent"
         exclusionMode: ExclusionMode.Normal
         WlrLayershell.namespace: "tcballard-widget-manager"
@@ -145,6 +150,8 @@ Item {
         Core.Manager {
             anchors.fill: parent
             entries: root.installed
+            catalog: root.catalog
+            retained: root.retained
             workspaceError: root.desktop.error || ""
             onWorkspaceRequested: function(id,workspace) { root.execute(["workspace",id,workspace]); }
             busy: operation.busy
@@ -153,6 +160,10 @@ Item {
             onCloseRequested: { root.managerOpen=false;root.control("close-manager"); }
             onRefreshRequested: root.refresh()
             onToggleRequested: function(id, enabled) { root.execute([enabled ? "add" : "hide", id]); }
+            onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
+            onDuplicateRequested: function(id) { root.execute(["duplicate",id]); }
+            onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
+            onUninstallRequested: function(id, policy) { root.execute(["uninstall",id,policy]); }
             onArrangeRequested: { root.control("arrange"); root.shown = true; root.managerOpen = false;root.control("close-manager"); }
         }
     }
