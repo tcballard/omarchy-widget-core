@@ -82,6 +82,7 @@ with tempfile.TemporaryDirectory() as directory:
     # Exercise production controller functions, settingsContext, Loader and panel.
     # Only top-level Quickshell windows and the transport adapter are substituted.
     controller = source[source.index('Item {'):source.index('    function screenFor(')]
+    controller=controller.replace('Quickshell.env("OMARCHY_WIDGET_REVEAL") === "1"', 'false')
     controller = controller.replace('id: root', 'id: root; objectName:"controller"; anchors.fill:parent', 1)
     controller = controller.replace('Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"', 'false')
     helper_line = next(line for line in controller.splitlines() if 'readonly property string helper:' in line)
