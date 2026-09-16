@@ -66,6 +66,7 @@ with tempfile.TemporaryDirectory() as directory:
     (io / 'StdioCollector.qml').write_text('import QtQuick\nQtObject { property string text:""; property bool waitForEnd:false }')
     source = (root / 'Host.qml').read_text()
     controller = source[source.index('Item {'):source.index('    function screenFor(')]
+    controller=controller.replace('Quickshell.env("OMARCHY_WIDGET_REVEAL") === "1"', 'false')
     controller = controller.replace('id: root', 'id: root; objectName:"controller"; anchors.fill:parent', 1)
     controller = controller.replace('Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"', 'true')
     helper = next(line for line in controller.splitlines() if 'readonly property string helper:' in line)

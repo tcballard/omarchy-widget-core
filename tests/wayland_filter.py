@@ -24,7 +24,8 @@ with tempfile.TemporaryDirectory(prefix='wl-filter-test-') as tmp:
     base=Path(tmp);up=base/'up';down=base/'down';listener=socket.socket(socket.AF_UNIX);listener.bind(str(up));listener.listen();listener.settimeout(3)
     hook=base/'policy';hook.write_text('#!/bin/sh\nexec '+"'"+helper.replace("'","'\\''")+"'"+' wayland-policy "$@"\n');hook.chmod(0o755)
     config=base/'config.toml';config.write_text('[socket]\nlisten='+json.dumps(str(down))+'\nupstream='+json.dumps(str(up))+'\n[exec]\nask_cmd='+json.dumps(str(hook))+'\n'+(root/'wayland-filter.toml').read_text())
-    process=subprocess.Popen([proxy,str(config)],env={**os.environ,'TOKIO_WORKER_THREADS':'1'},stdout=subprocess.DEVNULL)
+    lease=base/'lease';lease.write_text('0')
+    process=subprocess.Popen([proxy,str(config)],env={**os.environ,'TOKIO_WORKER_THREADS':'1','OMARCHY_WIDGET_REVEAL_LEASE':str(lease)},stdout=subprocess.DEVNULL)
     try:
         for _ in range(100):
             if down.exists():break
@@ -48,13 +49,14 @@ with tempfile.TemporaryDirectory(prefix='wl-filter-test-') as tmp:
             except (EOFError,ConnectionResetError):pass
             assert server.recv(1)==b'', 'Forbidden bind reached compositor'
             client.close();server.close()
-        for layer in [1,3]:
+        for layer,leased in [(1,False),(3,False),(3,True),(3,False)]:
+            lease.write_text(str(int(time.time()*1000)+25000) if leased else "0")
             client,server=connect()
             for number,name,obj in [(1,'wl_compositor',3),(2,'zwlr_layer_shell_v1',4)]:
                 request=message(2,0,uint(number)+string(name)+uint(4)+uint(obj));client.sendall(request);assert recv(server)==request
             request=message(3,0,uint(5));client.sendall(request);assert recv(server)==request
             request=message(4,0,uint(6)+uint(5)+uint(0)+uint(layer)+string('widget-test'));client.sendall(request)
-            if layer==1:
+            if layer==1 or leased:
                 assert recv(server)==request, 'Valid bottom-layer surface blocked'
                 # Exclusive keyboard capture must be rejected as well.
                 client.sendall(message(6,4,uint(1)))
