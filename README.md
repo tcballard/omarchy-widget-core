@@ -2,13 +2,15 @@
 
 <img src="https://raw.githubusercontent.com/tcballard/omarchy-badges/75975e5b5bf75e7ede3764bcd2950046f7abfe2c/badges/v1/omarchy-app.svg" alt="Omarchy App" height="20">
 
-A shared native desktop-widget host for Omarchy: fixed widget families, a cell occupancy grid, settings, and package management. Each widget lives in its own repository. Core runs each active package in its **own sandboxed Quickshell process**, with a trusted manager and state broker supervised by a user service. An optional compatibility plugin forwards old shell commands; it loads no widget code.
+A shared native desktop-widget host for Omarchy: fixed widget families, a cell occupancy grid, settings, and package management. Each widget lives in its own repository. Declarative widgets share one Core-owned renderer; advanced QML packages each run in their **own sandboxed Quickshell process**. A user service supervises rendering, management and state. An optional compatibility plugin forwards old shell commands; it loads no widget code.
 
-**v0.0.2 / API 3 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. No installed Omarchy version has been verified for this new runtime on a live desktop yet. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
+**v0.0.2 / API 3 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. The isolated QML runtime has a single-clock desktop capture; the new shared declarative renderer still needs live acceptance. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
 
 Core is a separate desktop application and supervised service. Omarchy's [plugin guide](https://plugins.omarchy.org/develop.html) places ordinary plugins in the shared shell and prohibits a second Quickshell process for a plugin. Core deliberately uses external package renderers to isolate widget code; its compatibility plugin is only a command bridge. Widget packages implement Core's contract, not Omarchy's shell-plugin contract. The development installer currently stores the app under that bridge's directory. This is not a claim of marketplace or upstream acceptance; supported Arch packaging and live acceptance remain release work.
 
 The intended experience is a consistent Small/Medium/Large desktop grid with independently installed and configured widgets. Rainmeter informs creator participation and extensibility; macOS informs the constrained layout and interaction model. Freeform skins and Rainmeter compatibility are outside this contract.
+
+Start with [the declarative contract](docs/declarative-widgets.md) for lightweight widgets. `omarchy-widget new` now generates that format; `new-qml` selects the advanced isolated path. This reduces duplicated renderers, but does not promise zero memory or CPU.
 
 See [compatibility](docs/compatibility.md) and [review remediation](docs/review-remediation.md) for the current contract and remaining acceptance gates.
 

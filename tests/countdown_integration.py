@@ -64,7 +64,7 @@ function draft() { return JSON.stringify(settingsContext.draftSettings); }
 }
 }
 '''.replace('CORE',(root/'qml').as_uri()).replace('CONTROLLER',controller).replace('SETTINGS',settings).replace('INSTANCE',json.dumps(first)).replace('CONTEXT',context).replace('PANEL',panel).replace('VIEW',json.dumps((package/'View.qml').as_uri()))
-    file=temp/'Test.qml';file.write_text(harness);engine=QQmlApplicationEngine();engine.addImportPath(str(temp));warnings=[];engine.warnings.connect(lambda e:warnings.extend(x.toString() for x in e));engine.load(QUrl.fromLocalFile(str(file)));assert engine.rootObjects(),warnings
+    file=temp/'Test.qml';file.write_text('import "'+(root/'qml/Declarative.js').as_uri()+'" as Declarative\n'+harness);engine=QQmlApplicationEngine();engine.addImportPath(str(temp));warnings=[];engine.warnings.connect(lambda e:warnings.extend(x.toString() for x in e));engine.load(QUrl.fromLocalFile(str(file)));assert engine.rootObjects(),warnings
     window=engine.rootObjects()[0];c=window.findChild(QObject,'controller');spin(lambda:not call(c,'pending'))
     assert call(c,'action','start');spin(lambda:not call(c,'pending'));started=placement(first);assert started['settings']['endsAt']>0;assert placement(second)==second_before
     assert call(c,'action','pause');spin(lambda:not call(c,'pending'));paused=placement(first);assert paused['settings']['endsAt']==0

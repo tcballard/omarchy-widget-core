@@ -1,3 +1,5 @@
+> Declarative v1 is a second execution mode: Core-owned views share the trusted UI process and never load package code. QML packages retain the isolation described below. See [the contract and shared failure boundary](declarative-widgets.md).
+
 # Runtime and security
 
 ## Widget islands (v0.0.2 development)

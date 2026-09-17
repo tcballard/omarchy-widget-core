@@ -13,7 +13,9 @@ package=Path(sys.argv[3]).resolve() if len(sys.argv)==4 and sys.argv[2]=='--pack
 manifest=json.loads((package/'widget.json').read_text())
 if manifest.get('schemaVersion')!=2 or manifest.get('coreApi') not in (2,3):
     raise SystemExit('Preview requires schemaVersion 2/coreApi 2 or 3; widget API 1 has been removed.')
-entry=(package/manifest['entryPoint']).resolve();assert entry.is_relative_to(package.resolve())
+declarative=manifest.get('renderer')=='declarative'
+entry=(root/'qml/DeclarativeView.qml') if declarative else (package/manifest['entryPoint']).resolve()
+if not declarative: assert entry.is_relative_to(package.resolve())
 output=Path(sys.argv[1]).resolve();output.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory() as tmp:
     p=Path(tmp);(p/'qs').mkdir()
@@ -51,12 +53,12 @@ Window {
         appearance:({radius:12,borderWidth:1,fontFamily:"DejaVu Sans"})
         Loader {
             anchors.fill:parent
-            Component.onCompleted:setSource(VIEW,{widgetContext:context})
+            Component.onCompleted:setSource(VIEW,PROPERTIES)
         }
     }
     Component.onCompleted:Style.fontFamily="DejaVu Sans"
 }
-'''.replace('PACKAGE_ID',json.dumps(manifest['id'])).replace('CORE',(root/'qml').as_uri()).replace('VIEW',json.dumps(entry.as_uri())).replace('DEFAULTS',json.dumps(manifest['defaults'])).replace('NAME',json.dumps(manifest['name'])).replace('CONFIGURABLE','true' if manifest.get('settingsEntryPoint') else 'false')
+'''.replace('PACKAGE_ID',json.dumps(manifest['id'])).replace('CORE',(root/'qml').as_uri()).replace('VIEW',json.dumps(entry.as_uri())).replace('PROPERTIES',('{widgetContext:context,definition:'+json.dumps(manifest)+',clockTimes:{}}') if declarative else '{widgetContext:context}').replace('DEFAULTS',json.dumps(manifest['defaults'])).replace('NAME',json.dumps(manifest['name'])).replace('CONFIGURABLE','true' if declarative or manifest.get('settingsEntryPoint') else 'false')
     (p/'Preview.qml').write_text(qml)
     app=QGuiApplication([]);engine=QQmlApplicationEngine();engine.addImportPath(tmp);engine.addImportPath(str(root/'sdk/preview-imports'))
     warnings=[];engine.warnings.connect(lambda errors:warnings.extend(e.toString() for e in errors))
