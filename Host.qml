@@ -6,6 +6,7 @@ import qs.Commons
 import "qml" as Core
 import "qml/Grid.js" as Grid
 import "qml/Workspace.js" as Workspace
+import "qml/Declarative.js" as Declarative
 
 Item {
     id: root
@@ -13,6 +14,18 @@ Item {
     property var manifest: null
     property string omarchyPath: ""
     readonly property bool managerRole: Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"
+    readonly property bool declarativeWanted: managerRole && Declarative.wanted(installed,catalog,currentEditor ? currentEditor.instance : "",shown)
+    property var clockTimes: ({})
+    property int sampledMinute: -1
+    property bool clockPending: false
+    property string sampledZones: ""
+    readonly property var clockZones: managerRole ? Declarative.zones(installed,catalog,shown,desktop) : []
+    function refreshClocks() {
+        var zones=JSON.stringify(clockZones), minute=Math.floor(Date.now()/60000);
+        if(!clockZones.length || clockPending || (minute===sampledMinute && zones===sampledZones)) return;
+        clockPending=execute(["clock-times",zones],{clockMinute:minute,clockZones:zones});
+    }
+    onClockZonesChanged:refreshClocks()
     property string editSerial: ""
     property var pendingClose: null
     property string queuedConfigure: ""
@@ -117,20 +130,26 @@ Item {
         if(configuring!=="") { editorError="Save or cancel this editor before configuring another widget."; return; }
         if(saveStates[id] && saveStates[id].saving) { error="This widget is still saving. Please retry after it finishes."; return; }
         var item=entry(id);
-        if(!item || !item.placement || !item.manifest.settingsEntryPoint) { error="This widget has no available settings editor."; return; }
+        if(!item || !item.placement || (!item.manifest.settingsEntryPoint && !Declarative.isDeclarative(item))) { error="This widget has no available settings editor."; return; }
         settingsGeneration++;
         editorError="";
         var states=Object.assign({},saveStates); delete states[id]; saveStates=states;
         settingsContext.draftSettings=JSON.parse(JSON.stringify(item.placement.settings));
         settingsContext.revision=item.placement.revision;
         configuring=id;
-        settingsLoader.setSource(fileUrl(item.directory,item.manifest.settingsEntryPoint),{settingsContext:settingsContext});
+        if(Declarative.isDeclarative(item)) settingsLoader.setSource(Qt.resolvedUrl("qml/DeclarativeSettings.qml"),{settingsContext:settingsContext,definition:item.manifest});
+        else settingsLoader.setSource(fileUrl(item.directory,item.manifest.settingsEntryPoint),{settingsContext:settingsContext});
         return true;
     }
     Core.RegistryQueue {
         id: operation
         helper: root.helper
         onCompleted: function(request,success,response,message) {
+            if(request.args[0]==="clock-times") {
+                root.clockPending=false;
+                if(success) {root.clockTimes=response.zones || {};root.sampledMinute=request.token.clockMinute;root.sampledZones=request.token.clockZones;}
+                return;
+            }
             if(request.args[0]==="weather") {
                 var weather=Object.assign({},root.weatherStates);
                 weather[request.args[1]]=success ? response : {state:"unavailable",data:null,error:message};
@@ -168,7 +187,7 @@ Item {
                 root.snapshotReady=true;
                 // Preserve delegate focus and in-progress manager edits during polling.
                 if(JSON.stringify(root.installed)!==JSON.stringify(response.installed)) root.installed=response.installed;
-                if(!root.managerRole && root.configuring!=="" && !root.entry(root.configuring)) root.closeSettings();
+                if(root.configuring!=="" && !root.entry(root.configuring)) root.closeSettings();
                 if(JSON.stringify(root.catalog)!==JSON.stringify(response.catalog || [])) root.catalog=response.catalog || [];
                 if(JSON.stringify(root.retained)!==JSON.stringify(response.retained || [])) root.retained=response.retained || [];
                 root.repairRequired=response.repairRequired === true;
@@ -189,8 +208,8 @@ Item {
                     if(root.pendingClose && (!edit || edit.instance!==root.pendingClose.instance || String(edit.serial)!==root.pendingClose.serial)) {
                         root.acknowledgeClose();
                     }
-                    if(!root.managerRole && root.configuring!=="" && (!edit || edit.instance!==root.configuring || String(edit.serial)!==root.editSerial)) root.closeSettings();
-                    if(!root.managerRole && !root.pendingClose && root.configuring==="" && edit) {
+                    if(root.configuring!=="" && (!edit || edit.instance!==root.configuring || String(edit.serial)!==root.editSerial)) root.closeSettings();
+                    if(!root.pendingClose && root.configuring==="" && edit && (!root.managerRole || Declarative.isDeclarative(root.entry(edit.instance)))) {
                         if(root.openSettings(edit.instance)) root.editSerial=String(edit.serial);
                     }
                 }
@@ -212,11 +231,11 @@ Item {
         return !name && Quickshell.screens.length ? Quickshell.screens[0] : null;
     }
     Component.onCompleted: refresh()
-    Timer { interval:1000; running:true; repeat:true; onTriggered:root.refresh() }
+    Timer { interval:1000; running:true; repeat:true; onTriggered:{root.refresh();root.refreshClocks();} }
     // Wait for queued Configure/Save/close acknowledgements before releasing Qt.
     Timer {
         interval:250
-        running:root.managerRole && root.snapshotReady && !root.managerOpen && !root.editing && !root.revealing && !operation.busy && root.pendingClose===null && Object.keys(root.contentFailures).length===0
+        running:root.managerRole && !root.declarativeWanted && root.configuring==="" && root.snapshotReady && !root.managerOpen && !root.editing && !root.revealing && !operation.busy && root.pendingClose===null && Object.keys(root.contentFailures).length===0
         onTriggered:Quickshell.quit()
     }
     IpcHandler {
@@ -254,35 +273,42 @@ Item {
         WlrLayershell.namespace: "tcballard-widget-manager"
         WlrLayershell.layer: WlrLayer.Overlay
         WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
-        Core.Manager {
-            monitors: Object.keys(root.desktop.grids || {})
-            notice: root.notice
-            pendingEditor: root.currentEditor
-            repairRequired: root.repairRequired
-            onCancelEditorRequested: function(id,serial) { root.execute(["edit-done",id,serial]); }
-            onRepairRequested: root.execute(["repair"])
-            onRecoverRequested: function(id,size,monitor) { root.execute(["recover-placement",id,JSON.stringify({size:size,monitor:monitor})]); }
-            onExportRequested: function(id) { root.execute(["export-settings",id]); }
-            anchors.fill: parent
-            entries: root.installed
-            catalog: root.catalog
-            retained: root.retained
-            workspaceError: root.desktop.error || ""
-            onWorkspaceRequested: function(id,workspace) { root.execute(["workspace",id,workspace]); }
-            busy: operation.busy
-            error: root.deliveryError || root.error || Object.keys(root.placementErrors).map(function(id) { return root.placementErrors[id]; }).filter(function(message) { return !!message; }).join("; ")
-            onConfigureRequested: function(id) { root.control("close-manager");root.managerOpen=false;root.configure(id); }
-            onCloseRequested: { root.repairDismissed=true;root.managerOpen=false;root.control("close-manager"); }
-            onRefreshRequested: root.refresh()
-            onToggleRequested: function(id, enabled) { root.execute([enabled ? "show" : "hide", id]); }
-            onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
-            onDuplicateRequested: function(id) { root.execute(["duplicate",id]); }
-            onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
-            onPackageControlRequested: function(id,action) { root.execute(["package-control",id,action]); }
-            onRollbackRequested: function(id) { root.execute(["rollback",id]); }
-            onWeatherPermissionRequested: function(id, allowed) { root.execute(["weather-permission",id,allowed ? "allow" : "deny"]); }
-            onUninstallRequested: function(id, policy) { root.execute(["uninstall",id,policy]); }
-            onArrangeRequested: { root.control("arrange"); root.shown = true; root.managerOpen = false;root.control("close-manager"); }
+        Loader {
+            anchors.fill:parent
+            active:root.managerRole && root.managerOpen
+            sourceComponent:Component {
+                Core.Manager {
+                    monitors: Object.keys(root.desktop.grids || {})
+                    notice: root.notice
+                    pendingEditor: root.currentEditor
+                    repairRequired: root.repairRequired
+                    onCancelEditorRequested: function(id,serial) { root.execute(["edit-done",id,serial]); }
+                    onRepairRequested: root.execute(["repair"])
+                    onRecoverRequested: function(id,size,monitor) { root.execute(["recover-placement",id,JSON.stringify({size:size,monitor:monitor})]); }
+                    onExportRequested: function(id) { root.execute(["export-settings",id]); }
+                    anchors.fill: parent
+                    entries: root.installed
+                    catalog: root.catalog
+                    retained: root.retained
+                    workspaceError: root.desktop.error || ""
+                    onWorkspaceRequested: function(id,workspace) { root.execute(["workspace",id,workspace]); }
+                    busy: operation.busy
+                    error: root.deliveryError || root.error || Object.keys(root.placementErrors).map(function(id) { return root.placementErrors[id]; }).filter(function(message) { return !!message; }).join("; ")
+                    onConfigureRequested: function(id) { root.control("close-manager");root.configure(id);root.managerOpen=false; }
+                    onCloseRequested: { root.repairDismissed=true;root.control("close-manager");root.managerOpen=false; }
+                    onRefreshRequested: root.refresh()
+                    onToggleRequested: function(id, enabled) { root.execute([enabled ? "show" : "hide", id]); }
+                    onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
+                    onDuplicateRequested: function(id) { root.execute(["duplicate",id]); }
+                    onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
+                    onPackageControlRequested: function(id,action) { root.execute(["package-control",id,action]); }
+                    onRollbackRequested: function(id) { root.execute(["rollback",id]); }
+                    onWeatherPermissionRequested: function(id, allowed) { root.execute(["weather-permission",id,allowed ? "allow" : "deny"]); }
+                    onUninstallRequested: function(id, policy) { root.execute(["uninstall",id,policy]); }
+                    onArrangeRequested: { root.control("arrange"); root.shown = true;root.control("close-manager");root.managerOpen = false; }
+                }
+        // manager-content-end
+            }
         }
     }
     QtObject {
@@ -296,7 +322,7 @@ Item {
     FloatingWindow {
         title: "Widget settings"
         onClosed: root.closeSettings()
-        visible: !root.managerRole && root.configuring!==""
+        visible: root.configuring!==""
         implicitWidth: Style.space(520)
         implicitHeight: Style.space(560)
         color: "transparent"
@@ -342,7 +368,7 @@ Item {
         }
     }
     Variants {
-        model: root.managerRole ? [] : root.installed.filter(function(w) { return w.placement && w.placement.enabled; }).map(function(w) { return w.instanceId; })
+        model: root.installed.filter(function(w) { return w.placement && w.placement.enabled && (root.managerRole ? Declarative.isDeclarative(w) && Declarative.enabled(w,root.catalog) : !Declarative.isDeclarative(w)); }).map(function(w) { return w.instanceId; })
         PanelWindow {
             id: window
             required property string modelData
@@ -418,7 +444,7 @@ Item {
                 moveStepY: window.grid ? window.grid.cell+window.grid.gapY : 192
                 invalidTarget: window.moving && !window.validTarget
                 notice: (window.moving && !window.validTarget ? "Those cells are unavailable" : "") || root.placementErrors[window.modelData] || root.deliveryError || context.saveError || (context.saving ? "Saving…" : "")
-                configurable: window.metadata.coreApi>=3 && !!window.metadata.settingsEntryPoint
+                configurable: window.metadata.coreApi>=3 && (!!window.metadata.settingsEntryPoint || Declarative.isDeclarative(window.entry))
                 onConfigureRequested: root.configure(window.modelData)
                 onEditRequested: root.control("finish-arrange")
                 onEscapeRequested: root.control("finish-arrange")
@@ -436,9 +462,22 @@ Item {
                     onStatusChanged: if(status===Loader.Error) root.contentFailed(window.modelData);
                     anchors.fill: parent
                     active: true
-                    readonly property string entryUrl: window.entry ? "file://" + window.entry.directory.split("/").map(encodeURIComponent).join("/") + "/" + window.metadata.entryPoint.split("/").map(encodeURIComponent).join("/") : ""
-                    onEntryUrlChanged: if(entryUrl) setSource(entryUrl,{widgetContext:context})
-                    Component.onCompleted: if(entryUrl) setSource(entryUrl,{widgetContext:context})
+                    readonly property string entryUrl: Declarative.isDeclarative(window.entry) ? Qt.resolvedUrl("qml/DeclarativeView.qml").toString() : window.entry ? "file://" + window.entry.directory.split("/").map(encodeURIComponent).join("/") + "/" + window.metadata.entryPoint.split("/").map(encodeURIComponent).join("/") : ""
+                    function loadView() {
+                        if(!entryUrl)return;
+                        if(Declarative.isDeclarative(window.entry))setSource(entryUrl,{widgetContext:context,definition:window.metadata,clockTimes:root.clockTimes});
+                        else setSource(entryUrl,{widgetContext:context});
+                    }
+                    onEntryUrlChanged:loadView()
+                    Component.onCompleted:loadView()
+                    Connections {
+                        target:root
+                        function onClockTimesChanged() {if(content.item && Declarative.isDeclarative(window.entry))content.item.clockTimes=root.clockTimes;}
+                    }
+                    Connections {
+                        target:window
+                        function onMetadataChanged() {if(content.item && Declarative.isDeclarative(window.entry))content.item.definition=window.metadata;}
+                    }
                 }
                 Core.Label { anchors.centerIn: parent; visible: content.status === Loader.Error; text: "Widget could not load"; color: Color.urgent }
             }

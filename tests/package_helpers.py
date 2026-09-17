@@ -6,7 +6,7 @@ binary=Path(sys.argv[1]).resolve()
 with tempfile.TemporaryDirectory() as tmp:
     base=Path(tmp);env={**os.environ,'XDG_DATA_HOME':str(base/'data'),'XDG_STATE_HOME':str(base/'state')}
     def cli(*args):return json.loads(subprocess.check_output([str(binary),*map(str,args)],env=env,text=True))
-    package=base/'helper-package';cli('new',package,'io.example.helper','Helper')
+    package=base/'helper-package';cli('new-qml',package,'io.example.helper','Helper')
     shutil.copy('/usr/bin/true',package/'helper');(package/'helper').chmod(0o6755)
     for operation in ['install','update','rollback']:
         cli(operation,'io.example.helper' if operation=='rollback' else package)

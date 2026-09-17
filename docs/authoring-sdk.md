@@ -1,3 +1,5 @@
+> Default authoring now uses the [declarative contract](declarative-widgets.md). The QML workflow below is the advanced isolated option; use `new-qml` for that starter.
+
 # Authoring a Widget Core package
 
 This SDK targets API 3. Older hosts reject these packages before installation.
@@ -7,13 +9,13 @@ Live desktop acceptance remains a release gate.
 ## Start and validate
 
 ```bash
-omarchy-widget new ./my-widget io.example.my-widget "My widget"
+omarchy-widget new-qml ./my-widget io.example.my-widget "My widget"
 omarchy-widget validate ./my-widget
 omarchy-widget install ./my-widget
 omarchy-widget manage
 ```
 
-`new` writes a complete standalone package and refuses an existing destination.
+`new-qml` writes a complete standalone package and refuses an existing destination.
 The parent directory must exist. `validate` checks identity, API, supported sizes,
 paths, bounds, defaults, declared settings schema, migration shapes, capabilities
 and dependencies. It never executes the package. It does not prove that arbitrary

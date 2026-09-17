@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 2,
+  "kind": "desktop-widget",
+  "coreApi": 3,
+  "id": "io.github.tcballard.worldclock",
+  "name": "World Clock",
+  "version": "0.2.0",
+  "renderer": "declarative",
+  "requires": [
+    "declarative-v1",
+    "settings-schema",
+    "frame-settings"
+  ],
+  "families": [
+    "small",
+    "medium",
+    "large"
+  ],
+  "defaultFamily": "medium",
+  "defaults": {
+    "cities": [
+      {
+        "label": "London",
+        "zone": "Europe/London"
+      },
+      {
+        "label": "New York",
+        "zone": "America/New_York"
+      },
+      {
+        "label": "Chicago",
+        "zone": "America/Chicago"
+      },
+      {
+        "label": "Amsterdam",
+        "zone": "Europe/Amsterdam"
+      },
+      {
+        "label": "Tokyo",
+        "zone": "Asia/Tokyo"
+      },
+      {
+        "label": "Sydney",
+        "zone": "Australia/Sydney"
+      }
+    ],
+    "displayMode": "digital",
+    "homeZone": "Europe/London"
+  },
+  "settingsSchema": {
+    "type": "object",
+    "required": [
+      "cities",
+      "displayMode",
+      "homeZone"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "cities": {
+        "type": "array",
+        "maxItems": 12,
+        "items": {
+          "type": "object",
+          "required": [
+            "label",
+            "zone"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "zone": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        }
+      },
+      "displayMode": {
+        "type": "string",
+        "enum": [
+          "digital",
+          "analogue"
+        ]
+      },
+      "homeZone": {
+        "type": "string",
+        "maxLength": 128
+      }
+    }
+  },
+  "settingsUi": [
+    {
+      "key": "cities",
+      "label": "Cities \u00b7 IANA timezone names",
+      "type": "timezone-list"
+    },
+    {
+      "key": "displayMode",
+      "label": "Clock style",
+      "type": "choice"
+    },
+    {
+      "key": "homeZone",
+      "label": "Home timezone",
+      "type": "text"
+    }
+  ],
+  "view": {
+    "type": "repeat",
+    "items": {
+      "setting": "cities"
+    },
+    "child": {
+      "type": "column",
+      "children": [
+        {
+          "type": "text",
+          "value": {
+            "item": "label"
+          },
+          "style": "caption"
+        },
+        {
+          "type": "clock",
+          "timezone": {
+            "item": "zone"
+          },
+          "mode": {
+            "setting": "displayMode"
+          }
+        }
+      ]
+    }
+  },
+  "settingsVersion": 2,
+  "migrations": [
+    {
+      "from": 1,
+      "to": 2,
+      "defaults": {
+        "displayMode": "digital",
+        "homeZone": "Europe/London"
+      }
+    }
+  ]
+}

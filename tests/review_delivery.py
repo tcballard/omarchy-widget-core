@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory() as tmp:
         return json.loads(subprocess.check_output([str(binary), *map(str, args)], text=True))
 
     package = temp/'package'
-    cli('new', package, 'io.review.delivery', 'Delivery')
+    cli('new-qml', package, 'io.review.delivery', 'Delivery')
     manifest = json.loads((package/'widget.json').read_text())
     (package/'Settings.qml').rename(package/'Set#tings.qml')
     manifest['settingsEntryPoint'] = 'Set#tings.qml'
@@ -108,7 +108,7 @@ else:
 }}
 '''.replace('INSTANCE', json.dumps(instance)).replace('BROKEN', json.dumps((temp/'Broken.qml').as_uri()))
     file = temp/'Test.qml'
-    file.write_text(harness)
+    file.write_text('import "'+(root/'qml/Declarative.js').as_uri()+'" as Declarative\n'+harness)
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(temp))
     warnings = []
