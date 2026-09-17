@@ -373,7 +373,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
         .spawn()
         .map_err(err)?;
     let mut runners: BTreeMap<String, Runner> = BTreeMap::new();
-    let mut dead_editors = std::collections::BTreeSet::new();
+    let mut dead_editors: BTreeMap<String, String> = BTreeMap::new();
     let mut failures: BTreeMap<String, (u32, Instant)> = BTreeMap::new();
     let mut generations: BTreeMap<String, (PathBuf, u64)> = BTreeMap::new();
     let result = (|| {
@@ -440,7 +440,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
                 });
                 for (id, source) in wanted {
                     // Finish recovery before a replacement can open a new editor.
-                    if runners.contains_key(&id) || dead_editors.contains(&id) {
+                    if runners.contains_key(&id) || dead_editors.contains_key(&id) {
                         continue;
                     }
                     if let Some((count, when)) = failures.get(&id) {
@@ -462,7 +462,10 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         }
                         Err(e) => {
                             eprintln!("Widget {id}: {e}");
-                            dead_editors.insert(id.clone());
+                            dead_editors.insert(
+                                id.clone(),
+                                "Clearing settings from the stopped runner".into(),
+                            );
                             let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                             failures.insert(id.clone(), (count, Instant::now()));
                             if !runners
@@ -482,6 +485,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         "disabled"
                     } else if runners.contains_key(id) {
                         "running"
+                    } else if dead_editors.contains_key(id) {
+                        "recovery-blocked"
                     } else if count >= 3 {
                         "failed"
                     } else if count > 0 {
@@ -489,7 +494,10 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     } else {
                         "idle"
                     };
-                    health.insert(id.into(), json!({"state":state,"failures":count}));
+                    health.insert(
+                        id.into(),
+                        runner_health(state, count, dead_editors.get(id).map(String::as_str)),
+                    );
                 }
                 let _ = atomic_json(
                     &r.state.join("runner-health.json"),
@@ -519,13 +527,22 @@ pub fn supervise(config: &Path) -> Result<Value> {
                 )?;
             }
             for id in dead {
-                dead_editors.insert(id.clone());
+                dead_editors.insert(
+                    id.clone(),
+                    "Clearing settings from the stopped runner".into(),
+                );
                 runners.remove(&id);
                 let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                 failures.insert(id.clone(), (count, Instant::now()));
                 eprintln!("Widget {id} stopped; failure {count}/3 (restart this package in Widgets to retry)");
             }
-            dead_editors.retain(|id| r.clear_dead_editor(Some(id)).is_err());
+            dead_editors.retain(|id, reason| match r.clear_dead_editor(Some(id)) {
+                Ok(()) => false,
+                Err(error) => {
+                    *reason = error.chars().take(1000).collect();
+                    true
+                }
+            });
             std::thread::sleep(Duration::from_millis(20));
         }
     })();
@@ -536,9 +553,28 @@ pub fn supervise(config: &Path) -> Result<Value> {
     result
 }
 
+fn runner_health(state: &str, failures: u32, recovery_error: Option<&str>) -> Value {
+    let message = recovery_error.map(|error| {
+        format!("Restart paused until stale settings can be cleared: {error}. Resolve the registry error; if layout repair is required, run omarchy-widget repair. Recovery retries automatically.")
+    });
+    json!({"state":state,"failures":failures,"message":message})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn blocked_editor_recovery_explains_the_hold() {
+        let error = "Invalid placement; layout preserved".to_string();
+        let health = runner_health("recovery-blocked", 1, Some(&error));
+        assert_eq!(health["state"], "recovery-blocked");
+        let message = health["message"].as_str().unwrap();
+        assert!(message.contains(&error));
+        assert!(message.contains("omarchy-widget repair"));
+        assert!(message.contains("automatically"));
+        assert!(runner_health("running", 0, None)["message"].is_null());
+    }
+
     #[test]
     fn trickled_requests_have_an_absolute_deadline() {
         let (mut reader, mut writer) = UnixStream::pair().unwrap();

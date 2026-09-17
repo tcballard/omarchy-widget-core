@@ -38,3 +38,7 @@ Any failure in installation, persistence, process separation or settings acknowl
     to overwrite a later incompatible edit. Kill/restart only its package and
     verify the manager and another package remain usable. Finish settings before
     update; confirm an open editor blocks code replacement.
+
+18. Click a passive clock while an application has keyboard focus. Widget surfaces request on-demand keyboard focus even outside arrange mode: record the focus transfer, how focus returns, gear Tab/Return and action-button behaviour. This is an unverified desktop behaviour change, not evidence that passive clicks preserve application focus.
+19. Save under sustained registry contention. Record total latency, the retry notice, draft retention and absence of duplicate writes. The CLI retries pre-dispatch busy refusals for two seconds; the QML queue permits four more attempts with 0.2/0.4/0.8/1.0-second backoffs. Repeated two-second refusals therefore take about 12.4 seconds, plus dispatch overhead. Rate-limit refusals can terminate CLI attempts earlier. Unknown outcomes/timeouts are not replayed. Decide whether measured delay is acceptable before release.
+20. Kill an editing runner, then hold the registry unavailable in a disposable fixture. Confirm Available reports recovery-blocked with the actual registry error and repair guidance, then automatically resumes recovery once the registry is usable. A completely unreadable layout may also prevent the manager from listing packages; inspect the supervisor journal in that case.

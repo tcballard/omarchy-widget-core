@@ -418,7 +418,7 @@ impl Registry {
                 || !["x", "y"]
                     .iter()
                     .all(|k| p[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n)))
-                || !p["monitor"].as_str().is_some_and(|s| s.len() <= 120)
+                || p["monitor"].as_str().is_none_or(|s| s.len() > 120)
                 || !p["size"].is_string()
                 || !workspaces::valid(&p["workspace"])
                 || !grid::valid_preference(p)

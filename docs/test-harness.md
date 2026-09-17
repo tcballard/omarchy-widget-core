@@ -16,7 +16,7 @@ Files are created private to your user. Logs, monitor names, paths and your note
 
 ## Run the automated suite
 
-Prerequisites are the same as `.github/workflows/check.yml`: Rust including rustfmt/clippy, Node, Python with PySide6 6.11.2 and Qt system libraries, bubblewrap, and a user namespace environment supporting the live sandbox probes. The sandbox capture command specifically uses `/usr/bin/python3`; install PySide6 there too. The harness does not install dependencies, fetch repositories, or alter your desktop installation.
+Prerequisites are the same as `.github/workflows/check.yml`: Rust 1.98.1 including rustfmt/clippy (pinned in rust-toolchain.toml and CI), Node, Python with PySide6 6.11.2 and Qt system libraries, bubblewrap, and a user namespace environment supporting the live sandbox probes. The sandbox capture command specifically uses `/usr/bin/python3`; install PySide6 there too. The harness does not install dependencies, fetch repositories, or alter your desktop installation.
 
 ```bash
 python3 tools/desktop-review.py --output "$HOME/widget-review" suite \
@@ -60,7 +60,7 @@ python3 tools/desktop-review.py --output "$HOME/widget-review" record reveal not
 python3 tools/desktop-review.py --output "$HOME/widget-review" report
 ```
 
-Use `fail` or `blocked` with the exact symptom when appropriate. Review every item in `checklist.md`: install; empty/single/multi/hidden performance; failing content; settings; arrange; topology; reserved space; workspaces; theme; optional reveal; migration/rollback; live weather; suspend/reboot; lifecycle/isolation; outside-author workflow; interrupted/full-disk persistence; disposable cgroup tests. The checks retain **not-run** until you explicitly record an outcome. Do destructive persistence experiments only in disposable storage.
+Use `fail` or `blocked` with the exact symptom when appropriate. Review every item in `checklist.md`: install; empty/single/multi/hidden performance; failing content; settings; passive-click keyboard focus; sustained-contention latency; arrange; topology; reserved space; workspaces; theme; optional reveal; migration/rollback; live weather; suspend/reboot; lifecycle/isolation; outside-author workflow; interrupted/full-disk persistence; disposable cgroup tests. The checks retain **not-run** until you explicitly record an outcome. Do destructive persistence experiments only in disposable storage.
 
 ## Reading the MB figures
 

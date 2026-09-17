@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt, clippy
       - run: python3 tests/desktop_review.py
@@ -56,7 +56,7 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get install -y libegl1 libopengl0
       - run: pip install PySide6==6.11.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: cargo build --locked
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/lifecycle.py
@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: cargo build --locked
       - run: bash build-wayland-filter
       - run: python3 tests/wayland_filter.py target/wl-mitm-source/target/release/wl-mitm target/debug/omarchy-widget
@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: cargo build --locked
       - name: Exercise resource isolation in a disposable user session
         run: |

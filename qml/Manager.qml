@@ -106,7 +106,7 @@ FocusScope {
                         color: Color.muted; Layout.fillWidth:true; wrapMode:Text.Wrap
                     }
                     Label {
-                        text: packageCard.modelData.loadFailure ? "Widget content failed to load. Package stopped; settings preserved. Export settings, roll back, or install a compatible update, then Enable package." : packageCard.modelData.health ? "Runner: "+packageCard.modelData.health.state+" · failures "+packageCard.modelData.health.failures : "Runner status unavailable"
+                        text: packageCard.modelData.loadFailure ? "Widget content failed to load. Package stopped; settings preserved. Export settings, roll back, or install a compatible update, then Enable package." : packageCard.modelData.health ? "Runner: "+packageCard.modelData.health.state+" · failures "+packageCard.modelData.health.failures+(packageCard.modelData.health.message ? " · "+packageCard.modelData.health.message : "") : "Runner status unavailable"
                         color: packageCard.modelData.health && packageCard.modelData.health.state==="failed" ? Color.urgent : Color.muted
                         Layout.fillWidth:true; wrapMode:Text.Wrap
                     }
