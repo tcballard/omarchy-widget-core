@@ -1,5 +1,7 @@
 # Desktop acceptance · v0.0.2
 
+Use the [desktop review harness](test-harness.md) to run the portable suite, collect footprint/CPU/memory evidence and record each manual result in a resumable report. The harness adds no installed runtime dependency.
+
 Not run in the remote development environment. Record `omarchy-version`, Quickshell/Qt versions, GPU, monitor layout/scales, theme, tested Core commit, exact steps and observations. Portable CI is not a substitute for these checks.
 
 1. Upgrade an actual 0.1.1 installation with custom cities/appearance. Run the one-time shell restart. Confirm the backup, preserved settings and only one visible copy of each widget.

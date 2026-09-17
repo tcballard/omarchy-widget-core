@@ -12,10 +12,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - run: python3 tests/desktop_review.py
       - run: cargo fmt --all -- --check
       - run: cargo test --locked
       - run: cargo test --locked --features experimental-reveal
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Record Rust release binary footprint
+        run: |
+          cargo build --locked --release
+          stat --printf='Rust release binary: %s bytes\n' target/release/omarchy-widget
+          sha256sum target/release/omarchy-widget
       - uses: actions/checkout@v4
         with:
           repository: tcballard/omarchy-widget-core
