@@ -2,6 +2,7 @@
 use super::*;
 use std::collections::BTreeMap;
 use std::net::Shutdown;
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -364,14 +365,9 @@ pub fn supervise(config: &Path) -> Result<Value> {
     // No runner from this supervisor lifetime exists yet. A persisted editor
     // cannot refer to an open window; clear its registration before launch.
     let _ = retry_busy(|| r.clear_dead_editor(None).map(|()| json!(true)));
-    let mut manager = Command::new("/usr/bin/qs")
-        .args(["--no-duplicate", "-p"])
-        .arg(config)
-        .env("OMARCHY_WIDGET_ROLE", "manager")
-        .env_remove("OMARCHY_WIDGET_BROKER")
-        .stdin(Stdio::null())
-        .spawn()
-        .map_err(err)?;
+    let mut manager: Option<Child> = None;
+    let mut manager_attempts = 0;
+    let mut manager_retry = Instant::now();
     let mut runners: BTreeMap<String, Runner> = BTreeMap::new();
     let mut dead_editors: BTreeMap<String, String> = BTreeMap::new();
     let mut failures: BTreeMap<String, (u32, Instant)> = BTreeMap::new();
@@ -379,8 +375,11 @@ pub fn supervise(config: &Path) -> Result<Value> {
     let result = (|| {
         let mut next_scan = Instant::now();
         loop {
-            if manager.try_wait().map_err(err)?.is_some() {
-                return Err("Widget manager exited".into());
+            if let Some(child) = manager.as_mut() {
+                if child.try_wait().map_err(err)?.is_some() {
+                    manager = None;
+                    manager_retry = Instant::now() + Duration::from_secs(5);
+                }
             }
             if Instant::now() >= next_scan {
                 let snapshot = match r.snapshot() {
@@ -394,10 +393,32 @@ pub fn supervise(config: &Path) -> Result<Value> {
                             &json!({"updatedAt":reveal::now(),"error":e}),
                         );
                         next_scan = Instant::now() + Duration::from_secs(1);
-                        std::thread::sleep(Duration::from_millis(20));
+                        std::thread::sleep(Duration::from_secs(1));
                         continue;
                     }
                 };
+                if manager_required(&snapshot) {
+                    if manager.is_none() && manager_attempts < 3 && Instant::now() >= manager_retry {
+                        manager_attempts += 1;
+                        match Command::new("/usr/bin/qs")
+                            .args(["--no-duplicate", "-p"])
+                            .arg(config)
+                            .env("OMARCHY_WIDGET_ROLE", "manager")
+                            .env_remove("OMARCHY_WIDGET_BROKER")
+                            .stdin(Stdio::null())
+                            .spawn()
+                        {
+                            Ok(child) => manager = Some(child),
+                            Err(error) => {
+                                eprintln!("Widget manager launch failed: {error}");
+                                manager_retry = Instant::now() + Duration::from_secs(5);
+                            }
+                        }
+                    }
+                } else {
+                    manager_attempts = 0;
+                    manager_retry = Instant::now();
+                }
                 let reveal_until = if snapshot["runtime"]["revealing"] == true {
                     snapshot["runtime"]["revealUntil"].as_u64().unwrap_or(0)
                 } else {
@@ -543,14 +564,57 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     true
                 }
             });
-            std::thread::sleep(Duration::from_millis(20));
+            let descriptors: Vec<_> = runners.values().map(|r| r.listener.as_raw_fd()).collect();
+            wait_for_brokers(
+                &descriptors,
+                next_scan.saturating_duration_since(Instant::now()),
+            )?;
         }
     })();
     drop(runners);
-    let _ = manager.kill();
-    let _ = manager.wait();
+    if let Some(mut child) = manager {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
     let _ = fs::remove_dir_all(base);
     result
+}
+
+fn manager_required(snapshot: &Value) -> bool {
+    ["managerOpen", "editing", "revealing"]
+        .iter()
+        .any(|key| snapshot["runtime"][key] == true)
+}
+
+// Linux poll wakes immediately for broker requests; housekeeping remains at 1 Hz.
+fn wait_for_brokers(descriptors: &[RawFd], timeout: Duration) -> Result<()> {
+    #[repr(C)]
+    struct PollFd {
+        fd: std::ffi::c_int,
+        events: std::ffi::c_short,
+        revents: std::ffi::c_short,
+    }
+    unsafe extern "C" {
+        fn poll(fds: *mut PollFd, count: usize, timeout: std::ffi::c_int) -> std::ffi::c_int;
+    }
+    let mut fds: Vec<_> = descriptors
+        .iter()
+        .map(|fd| PollFd {
+            fd: *fd,
+            events: 1,
+            revents: 0,
+        })
+        .collect();
+    // Round up sub-millisecond waits to avoid spinning before the next scan.
+    let millis = timeout.as_millis().saturating_add(1).min(1000) as i32;
+    // The descriptors remain owned by runners throughout this synchronous call.
+    if unsafe { poll(fds.as_mut_ptr(), fds.len(), millis) } < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(err(error));
+        }
+    }
+    Ok(())
 }
 
 fn runner_health(state: &str, failures: u32, recovery_error: Option<&str>) -> Value {
@@ -563,6 +627,37 @@ fn runner_health(state: &str, failures: u32, recovery_error: Option<&str>) -> Va
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn manager_is_only_required_for_trusted_surfaces() {
+        assert!(!manager_required(
+            &json!({"runtime":{"edit":{"instance":"clock"}}})
+        ));
+        for key in ["managerOpen", "editing", "revealing"] {
+            let mut snapshot = json!({"runtime":{}});
+            snapshot["runtime"][key] = json!(true);
+            assert!(manager_required(&snapshot));
+            snapshot["runtime"][key] = json!(false);
+            assert!(!manager_required(&snapshot));
+        }
+    }
+
+    #[test]
+    fn broker_connection_wakes_housekeeping_wait() {
+        let path = env::temp_dir().join(format!("widget-poll-{}.sock", nonce()));
+        let listener = UnixListener::bind(&path).unwrap();
+        let client_path = path.clone();
+        let client = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            UnixStream::connect(client_path).unwrap()
+        });
+        let started = Instant::now();
+        wait_for_brokers(&[listener.as_raw_fd()], Duration::from_secs(1)).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(800));
+        let _stream = client.join().unwrap();
+        listener.accept().unwrap();
+        fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn blocked_editor_recovery_explains_the_hold() {
         let error = "Invalid placement; layout preserved".to_string();

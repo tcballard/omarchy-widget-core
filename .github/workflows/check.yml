@@ -60,6 +60,7 @@ jobs:
       - run: cargo build --locked
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/lifecycle.py
+      - run: python3 tests/window_lifecycle.py
       - run: python3 tests/sdk.py target/debug/omarchy-widget
       - run: python3 tests/preview_contract.py
       - run: python3 tests/review_delivery.py target/debug/omarchy-widget

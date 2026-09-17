@@ -213,7 +213,7 @@ def suite(worldclock=None, older_core=None, proxy=None):
             ('clippy', ['cargo', 'clippy', '--locked', '--all-targets', '--', '-D', 'warnings']),
             ('build', ['cargo', 'build', '--locked']),
             ('release-size-build', ['cargo', 'build', '--release', '--locked'])]
-    no_helper = ['qml_smoke', 'lifecycle', 'preview_contract', 'installer', 'keybinding', 'sandbox']
+    no_helper = ['qml_smoke', 'lifecycle', 'window_lifecycle', 'preview_contract', 'installer', 'keybinding', 'sandbox']
     with_helper = ['sdk', 'review_delivery', 'package_helpers', 'countdown_integration', 'runtime_integration']
     jobs += [(name, [sys.executable, f'tests/{name}.py']) for name in no_helper]
     jobs += [(name, [sys.executable, f'tests/{name}.py', helper]) for name in with_helper]

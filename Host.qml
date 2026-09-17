@@ -34,6 +34,7 @@ Item {
     property bool shown: true
     property bool editing: false
     property bool managerOpen: false
+    property bool snapshotReady: false
     property var weatherStates: ({})
     property var saveStates: ({})
     property var placementErrors: ({})
@@ -164,6 +165,7 @@ Item {
             if(!success) { if(request.args[0]!=="list")root.refresh(); return; }
             if(request.args[0] === "list") {
                 if(response.api !== 2 || !Array.isArray(response.installed)) { root.error="Unsupported Core response"; return; }
+                root.snapshotReady=true;
                 // Preserve delegate focus and in-progress manager edits during polling.
                 if(JSON.stringify(root.installed)!==JSON.stringify(response.installed)) root.installed=response.installed;
                 if(!root.managerRole && root.configuring!=="" && !root.entry(root.configuring)) root.closeSettings();
@@ -211,6 +213,12 @@ Item {
     }
     Component.onCompleted: refresh()
     Timer { interval:1000; running:true; repeat:true; onTriggered:root.refresh() }
+    // Wait for queued Configure/Save/close acknowledgements before releasing Qt.
+    Timer {
+        interval:250
+        running:root.managerRole && root.snapshotReady && !root.managerOpen && !root.editing && !root.revealing && !operation.busy && root.pendingClose===null && Object.keys(root.contentFailures).length===0
+        onTriggered:Quickshell.quit()
+    }
     IpcHandler {
         target: "io.github.tcballard.widget-core"
         function reveal(): void { root.control("reveal"); }
@@ -353,7 +361,8 @@ Item {
             function resetPosition() { positionX=effective ? effective.x : 0; positionY=effective ? effective.y : 0; }
             readonly property var target: grid ? Grid.target(positionX,positionY,sizeName,effective.monitor,config.workspace,grid) : null
             readonly property bool validTarget: !!target && Grid.valid(target,grid,root.occupancy.filter(function(_,i) { return i!==entry.occupancyIndex; }))
-            screen: root.screenFor(effective ? effective.monitor : "")
+            readonly property var selectedScreen: root.screenFor(effective ? effective.monitor : "")
+            screen: selectedScreen
             anchors { top: true; left: true }
             margins {
                 left: window.moving && window.target ? window.grid.x+window.target.column*(window.grid.cell+window.grid.gapX) : (window.effective ? window.effective.x : 0)
@@ -368,7 +377,7 @@ Item {
             WlrLayershell.keyboardFocus: !root.revealRunner ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
             // No compositor command socket is exposed to the sandbox.
             // Bottom-layer surfaces remain behind fullscreen windows.
-            visible: (root.shown || root.revealRunner) && effective !== null && screen !== null && Workspace.visible(config.workspace, screen ? screen.name : "", root.desktop)
+            visible: (root.shown || root.revealRunner) && effective !== null && selectedScreen !== null && Workspace.visible(config.workspace, selectedScreen ? selectedScreen.name : "", root.desktop)
             function place(size, monitorName) {
                 if(!target)return false;
                 return root.execute(["place", modelData, JSON.stringify({column:target.column,row:target.row,monitor:monitorName,size:size})]);
