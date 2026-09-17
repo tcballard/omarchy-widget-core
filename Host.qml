@@ -294,8 +294,8 @@ Item {
                     onWorkspaceRequested: function(id,workspace) { root.execute(["workspace",id,workspace]); }
                     busy: operation.busy
                     error: root.deliveryError || root.error || Object.keys(root.placementErrors).map(function(id) { return root.placementErrors[id]; }).filter(function(message) { return !!message; }).join("; ")
-                    onConfigureRequested: function(id) { root.control("close-manager");root.managerOpen=false;root.configure(id); }
-                    onCloseRequested: { root.repairDismissed=true;root.managerOpen=false;root.control("close-manager"); }
+                    onConfigureRequested: function(id) { root.control("close-manager");root.configure(id);root.managerOpen=false; }
+                    onCloseRequested: { root.repairDismissed=true;root.control("close-manager");root.managerOpen=false; }
                     onRefreshRequested: root.refresh()
                     onToggleRequested: function(id, enabled) { root.execute([enabled ? "show" : "hide", id]); }
                     onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
@@ -305,7 +305,7 @@ Item {
                     onRollbackRequested: function(id) { root.execute(["rollback",id]); }
                     onWeatherPermissionRequested: function(id, allowed) { root.execute(["weather-permission",id,allowed ? "allow" : "deny"]); }
                     onUninstallRequested: function(id, policy) { root.execute(["uninstall",id,policy]); }
-                    onArrangeRequested: { root.control("arrange"); root.shown = true; root.managerOpen = false;root.control("close-manager"); }
+                    onArrangeRequested: { root.control("arrange"); root.shown = true;root.control("close-manager");root.managerOpen = false; }
                 }
         // manager-content-end
             }
