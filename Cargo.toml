@@ -6,6 +6,10 @@ rust-version = "1.89"
 license = "MIT"
 description = "Native desktop widget host and local package registry for Omarchy"
 
+[features]
+default = []
+experimental-reveal = []
+
 [dependencies]
 serde_json = "=1.0.151"
 

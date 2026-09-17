@@ -14,6 +14,13 @@ Item {
     property string omarchyPath: ""
     readonly property bool managerRole: Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"
     property string editSerial: ""
+    property var pendingClose: null
+    property string queuedConfigure: ""
+    property var contentFailures: ({})
+    property var currentEditor: null
+    property bool repairRequired: false
+    property bool repairDismissed: false
+    property string deliveryError: ""
     property var installed: []
     property var catalog: []
     property var retained: []
@@ -27,6 +34,7 @@ Item {
     property bool shown: true
     property bool editing: false
     property bool managerOpen: false
+    property bool snapshotReady: false
     property var weatherStates: ({})
     property var saveStates: ({})
     property var placementErrors: ({})
@@ -44,6 +52,35 @@ Item {
         return accepted;
     }
     function refresh() { return execute(["list"]); }
+    function acknowledgeClose() {
+        pendingClose=null;deliveryError="";
+        var next=queuedConfigure;queuedConfigure="";
+        if(next) configure(next);
+    }
+    function retryDeliveries() {
+        if(pendingClose && !pendingClose.inFlight) {
+            var close=Object.assign({},pendingClose,{inFlight:true});
+            pendingClose=close;
+            if(!execute(["edit-done",close.instance,close.serial],{delivery:"close",serial:close.serial})) pendingClose=Object.assign({},close,{inFlight:false});
+        }
+        Object.keys(contentFailures).forEach(function(id) {
+            var failure=root.contentFailures[id];
+            if(failure.inFlight)return;
+            var failures=Object.assign({},root.contentFailures);
+            failures[id]={inFlight:true};root.contentFailures=failures;
+            if(!root.execute(["content-failed",id],{delivery:"content",instance:id})) {
+                failures=Object.assign({},root.contentFailures);failures[id]={inFlight:false};root.contentFailures=failures;
+            }
+        });
+    }
+    function contentFailed(id) {
+        var failures=Object.assign({},contentFailures);
+        if(!failures[id]) failures[id]={inFlight:false};
+        contentFailures=failures;
+        retryDeliveries();
+    }
+    Timer { interval:500; running:root.pendingClose!==null || Object.keys(root.contentFailures).length>0; repeat:true; onTriggered:root.retryDeliveries() }
+    function fileUrl(directory,path) { return "file://"+directory.split("/").concat(path.split("/")).map(encodeURIComponent).join("/"); }
     function control(method) { return execute(["control",method]); }
     function save(id, value, revision, action) {
         if (saveStates[id] && saveStates[id].saving) return false;
@@ -57,7 +94,10 @@ Item {
         return true;
     }
     function closeSettings() {
-        if(configuring && editSerial && entry(configuring)) execute(["edit-done",configuring,editSerial]);
+        if(configuring && editSerial && entry(configuring)) {
+            pendingClose={instance:configuring,serial:editSerial,inFlight:false};
+            retryDeliveries();
+        }
         configuring="";
         settingsGeneration++;
         settingsLoader.source="";
@@ -66,6 +106,7 @@ Item {
     }
     function configure(id) {
         if(root.revealRunner) return false;
+        if(pendingClose) { queuedConfigure=id;deliveryError="Finishing the previous settings window. Retrying automatically…"; return true; }
         if(configuring && configuring!==id) {editorError="Save or cancel this editor before configuring another widget."; return;}
         if(configuring===id) return;
         execute(["edit",id]);
@@ -83,7 +124,8 @@ Item {
         settingsContext.draftSettings=JSON.parse(JSON.stringify(item.placement.settings));
         settingsContext.revision=item.placement.revision;
         configuring=id;
-        settingsLoader.setSource("file://"+item.directory+"/"+item.manifest.settingsEntryPoint,{settingsContext:settingsContext});
+        settingsLoader.setSource(fileUrl(item.directory,item.manifest.settingsEntryPoint),{settingsContext:settingsContext});
+        return true;
     }
     Core.RegistryQueue {
         id: operation
@@ -94,8 +136,22 @@ Item {
                 weather[request.args[1]]=success ? response : {state:"unavailable",data:null,error:message};
                 root.weatherStates=weather; return;
             }
+            if(request.token && request.token.delivery) {
+                if(request.token.delivery==="close" && root.pendingClose && root.pendingClose.serial===request.token.serial) {
+                    if(success) root.acknowledgeClose();
+                    else root.pendingClose=Object.assign({},root.pendingClose,{inFlight:false});
+                } else if(request.token.delivery==="content") {
+                    var failures=Object.assign({},root.contentFailures);
+                    if(success || message==="Runner generation expired") delete failures[request.token.instance];
+                    else failures[request.token.instance]={inFlight:false};
+                    root.contentFailures=failures;
+                }
+                root.deliveryError=success ? "" : "Recovery acknowledgement pending. Retrying automatically: "+message;
+                root.refresh();
+                return;
+            }
             root.error=message;
-            if(success && request.args[0]==="export-settings") root.notice=response.message;
+            if(success && (request.args[0]==="export-settings" || request.args[0]==="repair")) root.notice=response.message;
             if(request.token) {
                 var id=request.token.instance;
                 var states=Object.assign({},root.saveStates);
@@ -109,11 +165,17 @@ Item {
             if(!success) { if(request.args[0]!=="list")root.refresh(); return; }
             if(request.args[0] === "list") {
                 if(response.api !== 2 || !Array.isArray(response.installed)) { root.error="Unsupported Core response"; return; }
+                root.snapshotReady=true;
                 // Preserve delegate focus and in-progress manager edits during polling.
                 if(JSON.stringify(root.installed)!==JSON.stringify(response.installed)) root.installed=response.installed;
                 if(!root.managerRole && root.configuring!=="" && !root.entry(root.configuring)) root.closeSettings();
                 if(JSON.stringify(root.catalog)!==JSON.stringify(response.catalog || [])) root.catalog=response.catalog || [];
                 if(JSON.stringify(root.retained)!==JSON.stringify(response.retained || [])) root.retained=response.retained || [];
+                root.repairRequired=response.repairRequired === true;
+                if(!root.repairRequired) root.repairDismissed=false;
+                var outstanding=Object.assign({},root.contentFailures);
+                Object.keys(outstanding).forEach(function(id) { if(!root.entry(id) || !root.entry(id).placement) delete outstanding[id]; });
+                root.contentFailures=outstanding;
                 root.occupancy=response.occupancy || [];
                 var desktop=response.desktop || ({available:false,monitors:{}});
                 if(JSON.stringify(root.desktop)!==JSON.stringify(desktop)) root.desktop=desktop;
@@ -121,10 +183,15 @@ Item {
                     root.revealing=response.runtime.revealing === true;
                     root.shown=response.runtime.shown !== false;
                     root.editing=response.runtime.editing === true;
-                    root.managerOpen=root.managerRole && response.runtime.managerOpen === true;
+                    root.managerOpen=root.managerRole && (response.runtime.managerOpen === true || (root.repairRequired && !root.repairDismissed));
                     var edit=response.runtime.edit;
-                    if(!root.managerRole && root.configuring==="" && edit && String(edit.serial)!==root.editSerial) {
-                        root.editSerial=String(edit.serial); root.openSettings(edit.instance);
+                    root.currentEditor=edit || null;
+                    if(root.pendingClose && (!edit || edit.instance!==root.pendingClose.instance || String(edit.serial)!==root.pendingClose.serial)) {
+                        root.acknowledgeClose();
+                    }
+                    if(!root.managerRole && root.configuring!=="" && (!edit || edit.instance!==root.configuring || String(edit.serial)!==root.editSerial)) root.closeSettings();
+                    if(!root.managerRole && !root.pendingClose && root.configuring==="" && edit) {
+                        if(root.openSettings(edit.instance)) root.editSerial=String(edit.serial);
                     }
                 }
                 root.themeAppearance=response.appearance || {};
@@ -146,6 +213,12 @@ Item {
     }
     Component.onCompleted: refresh()
     Timer { interval:1000; running:true; repeat:true; onTriggered:root.refresh() }
+    // Wait for queued Configure/Save/close acknowledgements before releasing Qt.
+    Timer {
+        interval:250
+        running:root.managerRole && root.snapshotReady && !root.managerOpen && !root.editing && !root.revealing && !operation.busy && root.pendingClose===null && Object.keys(root.contentFailures).length===0
+        onTriggered:Quickshell.quit()
+    }
     IpcHandler {
         target: "io.github.tcballard.widget-core"
         function reveal(): void { root.control("reveal"); }
@@ -184,6 +257,10 @@ Item {
         Core.Manager {
             monitors: Object.keys(root.desktop.grids || {})
             notice: root.notice
+            pendingEditor: root.currentEditor
+            repairRequired: root.repairRequired
+            onCancelEditorRequested: function(id,serial) { root.execute(["edit-done",id,serial]); }
+            onRepairRequested: root.execute(["repair"])
             onRecoverRequested: function(id,size,monitor) { root.execute(["recover-placement",id,JSON.stringify({size:size,monitor:monitor})]); }
             onExportRequested: function(id) { root.execute(["export-settings",id]); }
             anchors.fill: parent
@@ -193,11 +270,11 @@ Item {
             workspaceError: root.desktop.error || ""
             onWorkspaceRequested: function(id,workspace) { root.execute(["workspace",id,workspace]); }
             busy: operation.busy
-            error: root.error || Object.keys(root.placementErrors).map(function(id) { return root.placementErrors[id]; }).filter(function(message) { return !!message; }).join("; ")
+            error: root.deliveryError || root.error || Object.keys(root.placementErrors).map(function(id) { return root.placementErrors[id]; }).filter(function(message) { return !!message; }).join("; ")
             onConfigureRequested: function(id) { root.control("close-manager");root.managerOpen=false;root.configure(id); }
-            onCloseRequested: { root.managerOpen=false;root.control("close-manager"); }
+            onCloseRequested: { root.repairDismissed=true;root.managerOpen=false;root.control("close-manager"); }
             onRefreshRequested: root.refresh()
-            onToggleRequested: function(id, enabled) { root.execute([enabled ? "add" : "hide", id]); }
+            onToggleRequested: function(id, enabled) { root.execute([enabled ? "show" : "hide", id]); }
             onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
             onDuplicateRequested: function(id) { root.execute(["duplicate",id]); }
             onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
@@ -284,7 +361,8 @@ Item {
             function resetPosition() { positionX=effective ? effective.x : 0; positionY=effective ? effective.y : 0; }
             readonly property var target: grid ? Grid.target(positionX,positionY,sizeName,effective.monitor,config.workspace,grid) : null
             readonly property bool validTarget: !!target && Grid.valid(target,grid,root.occupancy.filter(function(_,i) { return i!==entry.occupancyIndex; }))
-            screen: root.screenFor(effective ? effective.monitor : "")
+            readonly property var selectedScreen: root.screenFor(effective ? effective.monitor : "")
+            screen: selectedScreen
             anchors { top: true; left: true }
             margins {
                 left: window.moving && window.target ? window.grid.x+window.target.column*(window.grid.cell+window.grid.gapX) : (window.effective ? window.effective.x : 0)
@@ -296,10 +374,10 @@ Item {
             exclusionMode: ExclusionMode.Ignore
             WlrLayershell.namespace: "tcballard-widget-" + modelData
             WlrLayershell.layer: root.revealRunner ? WlrLayer.Overlay : WlrLayer.Bottom
-            WlrLayershell.keyboardFocus: !root.revealRunner && (root.editing || context.inputRequested) ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+            WlrLayershell.keyboardFocus: !root.revealRunner ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
             // No compositor command socket is exposed to the sandbox.
             // Bottom-layer surfaces remain behind fullscreen windows.
-            visible: (root.shown || root.revealRunner) && effective !== null && screen !== null && Workspace.visible(config.workspace, screen ? screen.name : "", root.desktop)
+            visible: (root.shown || root.revealRunner) && effective !== null && selectedScreen !== null && Workspace.visible(config.workspace, selectedScreen ? selectedScreen.name : "", root.desktop)
             function place(size, monitorName) {
                 if(!target)return false;
                 return root.execute(["place", modelData, JSON.stringify({column:target.column,row:target.row,monitor:monitorName,size:size})]);
@@ -308,7 +386,6 @@ Item {
                 id: context
                 readonly property var settings: window.config.settings
                 active: window.visible
-                onSuspending: inputRequested=false
                 readonly property var weather: root.weatherStates[window.modelData] || ({state:"loading",data:null,error:""})
                 function requestWeather(latitude,longitude) {
                     return active && root.execute(["weather",window.modelData,String(latitude),String(longitude)]);
@@ -320,20 +397,15 @@ Item {
                 readonly property string packageId: window.metadata.id
                 readonly property string definitionId: "main"
                 readonly property string family: window.sizeName
-                readonly property string sizeName: window.metadata.coreApi===1 ? Grid.legacyName(window.sizeName) : window.sizeName
                 readonly property var appearance: Object.assign({}, root.themeAppearance, root.desktop.frame || {})
                 readonly property var saveState: root.saveStates[window.modelData] || ({saving:false,error:"",saved:false})
                 readonly property string saveError: saveState.error
                 readonly property bool saving: saveState.saving
                 readonly property bool saved: saveState.saved
                 readonly property int settingsRevision: window.config.revision
-                property int draftRevision: settingsRevision
-                property bool inputRequested: false
-                function requestInput(enabled) { inputRequested = enabled; if(enabled) draftRevision=settingsRevision; }
                 function requestConfigure() { root.configure(window.modelData); }
                 // API 3 actions use the revision observed when the action was prepared.
-                function saveSettings(value, revision) { return root.save(window.modelData,value,revision === undefined ? (window.metadata.coreApi===1 ? draftRevision : settingsRevision) : revision, true); }
-                onSettingsRevisionChanged: if(!inputRequested || saved) draftRevision=settingsRevision
+                function saveSettings(value, revision) { return root.save(window.modelData,value,revision === undefined ? settingsRevision : revision, true); }
             }
             Core.WidgetFrame {
                 anchors.fill: parent
@@ -345,10 +417,10 @@ Item {
                 moveStepX: window.grid ? window.grid.cell+window.grid.gapX : 192
                 moveStepY: window.grid ? window.grid.cell+window.grid.gapY : 192
                 invalidTarget: window.moving && !window.validTarget
-                notice: (window.moving && !window.validTarget ? "Those cells are unavailable" : "") || root.placementErrors[window.modelData] || context.saveError || (context.saving ? "Saving…" : "")
+                notice: (window.moving && !window.validTarget ? "Those cells are unavailable" : "") || root.placementErrors[window.modelData] || root.deliveryError || context.saveError || (context.saving ? "Saving…" : "")
                 configurable: window.metadata.coreApi>=3 && !!window.metadata.settingsEntryPoint
                 onConfigureRequested: root.configure(window.modelData)
-                onEditRequested: root.control("arrange")
+                onEditRequested: root.control("finish-arrange")
                 onEscapeRequested: root.control("finish-arrange")
                 onHideRequested: root.execute(["hide", window.modelData])
                 onMoved: function(dx,dy) { window.moving=true; window.positionX += dx; window.positionY += dy; }
@@ -361,7 +433,7 @@ Item {
                 onMonitorRequested: { var screens=Quickshell.screens; if(screens.length) window.place(window.sizeName,screens[(screens.indexOf(window.screen)+1)%screens.length].name); }
                 Loader {
                     id: content
-                    onStatusChanged: if(status===Loader.Error) root.execute(["content-failed",window.modelData]);
+                    onStatusChanged: if(status===Loader.Error) root.contentFailed(window.modelData);
                     anchors.fill: parent
                     active: true
                     readonly property string entryUrl: window.entry ? "file://" + window.entry.directory.split("/").map(encodeURIComponent).join("/") + "/" + window.metadata.entryPoint.split("/").map(encodeURIComponent).join("/") : ""

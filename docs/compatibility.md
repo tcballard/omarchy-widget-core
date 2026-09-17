@@ -6,7 +6,7 @@ features. It remains experimental pending target-desktop acceptance.
 
 | Package | This Core | Earlier Core API 2 hosts |
 | --- | --- | --- |
-| Schema 1 / API 1 | Legacy loading; mutations now require explicit Add | Historical implementation |
+| Schema 1 / API 1 | Removed; rejected by validation, installation, update, loading and rollback | Historical implementation |
 | Schema 2 / API 2 | Legacy loading and legacy package-owned settings gear | Optional features differ across revisions; not an author target |
 | Schema 2 / API 3 | Supported development contract | Rejected at manifest validation before install |
 | Future API or unknown `requires` feature | Rejected before install | Unsupported |
@@ -17,6 +17,16 @@ New widgets use `coreApi:3`. The manifest's optional `requires` array accepts
 array is only legal with API 3. API 3 itself is the boundary old hosts enforce.
 The registry JSON wire response remains `api:2` for existing CLI consumers;
 `widgetContext.api` is 3. These are separate interfaces.
+
+API 1's manifest conversion and display-context facade have been deleted. Port
+development packages to `schemaVersion:2`, `coreApi:3`, `families` and
+`defaultFamily`; replace `sizes`/`defaultSize` and use `small`, `medium`, `large`.
+Use `widgetContext.family` instead of `sizeName`. Remove `requestInput`,
+`inputRequested` and `draftRevision`; settings editors use `settingsContext`,
+and display actions save against `settingsRevision`. Previews reject API 1 too.
+Already-installed API 1 code is reported as an invalid package and is not run.
+Update it with a ported package or uninstall it. Existing layout-file recovery
+preserves saved data independently of package API support.
 
 | Runtime layer | Declared target | Evidence |
 | --- | --- | --- |

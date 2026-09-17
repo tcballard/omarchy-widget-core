@@ -13,12 +13,15 @@ struct Entry {
     owner: String,
     retry: u64,
     pending: bool,
+    pending_until: u64,
+    fetch_serial: u64,
     error: String,
 }
 #[derive(Default)]
 struct Cache {
     entries: BTreeMap<String, Entry>,
     next_request: u64,
+    fetch_serial: u64,
     package_retry: BTreeMap<String, u64>,
 }
 static CACHE: OnceLock<Arc<Mutex<Cache>>> = OnceLock::new();
@@ -158,6 +161,13 @@ impl Cache {
         now: u64,
         active: bool,
     ) -> Result<(Value, bool)> {
+        for entry in self.entries.values_mut() {
+            if entry.pending && now >= entry.pending_until {
+                entry.pending = false;
+                entry.error = "Weather request timed out; retrying later".into();
+                entry.retry = now.saturating_add(10_000);
+            }
+        }
         let missing = !self.entries.contains_key(key);
         let eligible = active
             && now >= self.next_request
@@ -200,7 +210,10 @@ impl Cache {
         let stale = e.data.is_null() || now.saturating_sub(e.updated) >= TTL;
         let start = eligible && stale && !e.pending && now >= e.retry;
         if start {
+            self.fetch_serial = self.fetch_serial.saturating_add(1);
+            e.fetch_serial = self.fetch_serial;
             e.pending = true;
+            e.pending_until = now.saturating_add(30_000);
             self.next_request = now.saturating_add(10_000);
             if !self.package_retry.contains_key(package) && self.package_retry.len() >= MAX_PACKAGES
             {
@@ -231,8 +244,23 @@ impl Cache {
             start,
         ))
     }
+    #[cfg(test)]
     fn complete(&mut self, key: &str, now: u64, wall: u64, result: Result<Value>) {
+        let serial = self.entries[key].fetch_serial;
+        self.complete_fetch(key, serial, now, wall, result);
+    }
+    fn complete_fetch(
+        &mut self,
+        key: &str,
+        serial: u64,
+        now: u64,
+        wall: u64,
+        result: Result<Value>,
+    ) {
         if let Some(e) = self.entries.get_mut(key) {
+            if !e.pending || e.fetch_serial != serial || now >= e.pending_until {
+                return;
+            }
             e.pending = false;
             match result {
                 Ok(data) => {
@@ -277,17 +305,18 @@ pub fn request(package: &str, lat: &str, lon: &str, active: bool) -> Result<Valu
     let cache = CACHE
         .get_or_init(|| Arc::new(Mutex::new(Cache::default())))
         .clone();
-    let (result, start) =
-        cache
-            .lock()
-            .map_err(err)?
-            .request(package, &key, elapsed_ms()?, active)?;
+    let (result, start, serial) = {
+        let mut c = cache.lock().map_err(err)?;
+        let (result, start) = c.request(package, &key, elapsed_ms()?, active)?;
+        let serial = c.entries.get(&key).map_or(0, |e| e.fetch_serial);
+        (result, start, serial)
+    };
     if start {
         std::thread::spawn(move || {
             let result = fetch(&lat, &lon);
             if let Ok(mut c) = cache.lock() {
                 if let Ok(now) = elapsed_ms() {
-                    c.complete(&key, now, reveal::now(), result);
+                    c.complete_fetch(&key, serial, now, reveal::now(), result);
                 }
             }
         });
@@ -414,5 +443,19 @@ mod tests {
             assert!(!public(ip.parse().unwrap()));
         }
         assert!(public("1.1.1.1".parse().unwrap()));
+    }
+    #[test]
+    fn abandoned_fetch_expires_and_late_completion_cannot_overwrite_retry() {
+        let mut c = Cache::default();
+        assert!(c.request("a", "x", 100, true).unwrap().1);
+        let old = c.entries["x"].fetch_serial;
+        let expired = c.request("a", "x", 30101, true).unwrap().0;
+        assert_eq!(expired["refreshing"], false);
+        assert_eq!(expired["state"], "unavailable");
+        assert!(c.request("a", "x", 60101, true).unwrap().1);
+        c.complete_fetch("x", old, 60102, 0, Ok(json!({"temperatureC":-10})));
+        assert!(c.entries["x"].data.is_null());
+        c.complete("x", 60103, 0, Ok(json!({"temperatureC":21})));
+        assert_eq!(c.entries["x"].data["temperatureC"], 21);
     }
 }

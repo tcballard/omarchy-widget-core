@@ -19,7 +19,9 @@ pub fn lease(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 pub fn permitted() -> bool {
-    env::var_os("OMARCHY_WIDGET_REVEAL_LEASE").is_some_and(|p| active(lease(Path::new(&p)), now()))
+    cfg!(feature = "experimental-reveal")
+        && env::var_os("OMARCHY_WIDGET_REVEAL_LEASE")
+            .is_some_and(|p| active(lease(Path::new(&p)), now()))
 }
 #[cfg(test)]
 mod tests {

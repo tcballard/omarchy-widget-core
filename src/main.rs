@@ -54,12 +54,15 @@ fn read_json(path: &Path, limit: u64) -> Result<Value> {
     serde_json::from_slice(&data).map_err(err)
 }
 fn manifest(dir: &Path) -> Result<Value> {
-    let mut v = read_json(&dir.join("widget.json"), 16384)?;
+    let v = read_json(&dir.join("widget.json"), 16384)?;
+    if v["coreApi"] == 1 {
+        return Err("Widget API 1 has been removed; port this package to schemaVersion 2/coreApi 3 with small, medium and large families".into());
+    }
     if v["kind"] != "desktop-widget"
-        || !((v["schemaVersion"] == 1 && v["coreApi"] == 1)
-            || (v["schemaVersion"] == 2 && (v["coreApi"] == 2 || v["coreApi"] == 3)))
+        || v["schemaVersion"] != 2
+        || !(v["coreApi"] == 2 || v["coreApi"] == 3)
     {
-        return Err("Requires desktop-widget schema 1/API 1 or schema 2/API 2–3; upgrade Core for newer APIs".into());
+        return Err("Requires desktop-widget schema 2/API 2–3; upgrade Core for newer APIs".into());
     }
     if !id_ok(v["id"].as_str().unwrap_or(""))
         || !v["name"]
@@ -88,45 +91,21 @@ fn manifest(dir: &Path) -> Result<Value> {
     if !v["defaults"].is_object() || serde_json::to_vec(&v["defaults"]).map_err(err)?.len() > 8192 {
         return Err("Defaults must be an object up to 8 KiB".into());
     }
-    // API 1 remains loadable, but geometry is always owned by Core.
-    let families: Vec<String> = if v["coreApi"] == 1 {
-        let sizes = v["sizes"].as_object().ok_or("Missing legacy sizes")?;
-        if sizes.is_empty()
-            || sizes.len() > 3
-            || !sizes.contains_key(v["defaultSize"].as_str().unwrap_or(""))
-        {
-            return Err("Invalid legacy sizes".into());
-        }
-        sizes
-            .keys()
-            .map(|k| family(k).map(str::to_owned))
-            .collect::<Result<_>>()?
-    } else {
-        let values = v["families"].as_array().ok_or("Missing families")?;
-        if values.is_empty() || values.len() > 3 {
-            return Err("Declare 1–3 families".into());
-        }
-        let mut result = Vec::new();
-        for value in values {
-            let name = value.as_str().ok_or("Invalid family")?;
-            if !["small", "medium", "large"].contains(&name) || result.contains(&name.to_string()) {
-                return Err("Families must be unique: small, medium, large".into());
-            }
-            result.push(name.to_string());
-        }
-        if !result.iter().any(|x| v["defaultFamily"] == x.as_str()) {
-            return Err("Invalid defaultFamily".into());
-        }
-        result
-    };
-    let default = if v["coreApi"] == 1 {
-        family(v["defaultSize"].as_str().unwrap_or(""))?
-    } else {
-        v["defaultFamily"].as_str().unwrap()
+    let values = v["families"].as_array().ok_or("Missing families")?;
+    if values.is_empty() || values.len() > 3 {
+        return Err("Declare 1–3 families".into());
     }
-    .to_string();
-    v["families"] = json!(families);
-    v["defaultFamily"] = json!(default);
+    let mut families = Vec::new();
+    for value in values {
+        let name = value.as_str().ok_or("Invalid family")?;
+        if family(name).is_err() || families.contains(&name) {
+            return Err("Families must be unique: small, medium, large".into());
+        }
+        families.push(name);
+    }
+    if !families.iter().any(|name| v["defaultFamily"] == *name) {
+        return Err("Invalid defaultFamily".into());
+    }
     if let Some(editor) = v["settingsEntryPoint"].as_str() {
         if !safe_relative(editor)
             || !editor.ends_with(".qml")
@@ -144,7 +123,7 @@ fn manifest(dir: &Path) -> Result<Value> {
             .as_object()
             .ok_or("Previews must be a family-to-PNG object")?
         {
-            if !families.contains(size) {
+            if !families.contains(&size.as_str()) {
                 return Err("Preview family is not supported".into());
             }
             let path = path.as_str().ok_or("Preview path must be a string")?;
@@ -259,9 +238,7 @@ fn validate(dir: &Path) -> Result<Value> {
 }
 fn family(name: &str) -> Result<&str> {
     match name {
-        "small" | "compact" => Ok("small"),
-        "medium" | "standard" => Ok("medium"),
-        "large" | "wide" => Ok("large"),
+        "small" | "medium" | "large" => Ok(name),
         _ => Err("Unknown widget family".into()),
     }
 }
@@ -322,6 +299,12 @@ impl Registry {
         })
     }
     fn lock(&self) -> Result<File> {
+        self.lock_kind(false)
+    }
+    fn read_lock(&self) -> Result<File> {
+        self.lock_kind(true)
+    }
+    fn lock_kind(&self, shared: bool) -> Result<File> {
         fs::create_dir_all(&self.state).map_err(err)?;
         // File locks are released by the kernel, including after SIGKILL.
         // Never unlink this inode: another process may already have it open.
@@ -333,8 +316,12 @@ impl Registry {
             .mode(0o600)
             .open(self.state.join("registry.lock"))
             .map_err(err)?;
-        file.try_lock()
-            .map_err(|_| "Registry busy; retry after the current operation finishes".to_string())?;
+        (if shared {
+            file.try_lock_shared()
+        } else {
+            file.try_lock()
+        })
+        .map_err(|_| "Registry busy; retry after the current operation finishes".to_string())?;
         Ok(file)
     }
     fn package(&self, id: &str) -> Result<PathBuf> {
@@ -363,9 +350,23 @@ impl Registry {
     fn layout(&self) -> Result<Value> {
         let path = self.state.join("layout.json");
         if !path.exists() {
-            return Ok(json!({"version":2,"revision":0,"placements":{},"packages":{}}));
+            return Ok(
+                json!({"version":2,"revision":0,"placements":{},"packages":{},"retiredLegacyIds":{}}),
+            );
         }
-        let mut v = read_json(&path, 1024 * 1024)?;
+        let original = read_json(&path, 1024 * 1024)?;
+        let retire_unknown_aliases = original["retiredLegacyIds"].is_null();
+        let mut layout = Self::validate_layout(original)?;
+        if retire_unknown_aliases {
+            for id in self.ids(&layout)? {
+                if layout["placements"][&id].is_null() {
+                    layout["retiredLegacyIds"][id] = json!(true);
+                }
+            }
+        }
+        Ok(layout)
+    }
+    fn validate_layout(mut v: Value) -> Result<Value> {
         if ![json!(1), json!(2)].contains(&v["version"]) || !v["placements"].is_object() {
             return Err("Unsupported layout; file preserved".into());
         }
@@ -381,6 +382,34 @@ impl Registry {
         {
             return Err("Invalid registry metadata; file preserved".into());
         }
+        Self::validate_runtime(&v["runtime"])?;
+        if v["packages"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .any(|(id, p)| !id_ok(id) || !p.is_object())
+        {
+            return Err(
+                "Invalid package metadata; layout preserved. Restore a matching backup.".into(),
+            );
+        }
+        // Old registries cannot tell whether an absent package-ID instance once
+        // existed. Retire those aliases on upgrade; existing identities survive.
+        if v["retiredLegacyIds"].is_null() {
+            v["retiredLegacyIds"] = json!({});
+            let ids: Vec<_> = v["packages"].as_object().unwrap().keys().cloned().collect();
+            for id in ids {
+                if v["placements"][&id].is_null() {
+                    v["retiredLegacyIds"][id] = json!(true);
+                }
+            }
+        }
+        if !v["retiredLegacyIds"].as_object().is_some_and(|ids| {
+            ids.iter()
+                .all(|(id, retired)| id_ok(id) && *retired == true)
+        }) {
+            return Err("Invalid retired identity metadata; layout preserved".into());
+        }
         for (id, p) in v["placements"].as_object_mut().unwrap() {
             if !id_ok(id)
                 || !p.is_object()
@@ -389,19 +418,26 @@ impl Registry {
                 || !["x", "y"]
                     .iter()
                     .all(|k| p[*k].as_f64().is_some_and(|n| (0.0..=20000.0).contains(&n)))
-                || !p["monitor"].as_str().is_some_and(|s| s.len() <= 120)
+                || p["monitor"].as_str().is_none_or(|s| s.len() > 120)
                 || !p["size"].is_string()
                 || !workspaces::valid(&p["workspace"])
                 || !grid::valid_preference(p)
             {
                 return Err("Invalid placement; layout preserved".into());
             }
-            p["size"] = json!(family(p["size"].as_str().unwrap())?);
             if legacy {
+                // Registry recovery is independent of the removed widget API.
+                p["size"] = json!(match p["size"].as_str().unwrap() {
+                    "compact" => "small",
+                    "standard" => "medium",
+                    "wide" => "large",
+                    name => name,
+                });
                 p["packageId"] = json!(id);
                 p["definitionId"] = json!("main");
                 p["revision"] = json!(0);
             }
+            family(p["size"].as_str().unwrap())?;
             if !id_ok(p["packageId"].as_str().unwrap_or(""))
                 || p["definitionId"] != "main"
                 || p["revision"].as_u64().is_none()
@@ -410,6 +446,145 @@ impl Registry {
             }
         }
         Ok(v)
+    }
+    fn validate_runtime(v: &Value) -> Result<()> {
+        let bad =
+            || "Invalid runtime metadata; layout preserved. Use omarchy-widget repair.".to_string();
+        if v.is_null() {
+            return Ok(());
+        }
+        if !v.is_object() {
+            return Err(bad());
+        }
+        for key in ["shown", "editing", "managerOpen", "revealing"] {
+            if !v[key].is_null() && !v[key].is_boolean() {
+                return Err(bad());
+            }
+        }
+        if !v["revealUntil"].is_null() && v["revealUntil"].as_u64().is_none() {
+            return Err(bad());
+        }
+        let edit = &v["edit"];
+        if !edit.is_null()
+            && (!edit.is_object()
+                || !edit["instance"].as_str().is_some_and(id_ok)
+                || edit["serial"].as_u64().is_none())
+        {
+            return Err(bad());
+        }
+        if !v["packageControls"].is_null() {
+            let controls = v["packageControls"].as_object().ok_or_else(bad)?;
+            for (id, c) in controls {
+                if !id_ok(id)
+                    || !c.is_object()
+                    || !c["disabled"].is_boolean()
+                    || c["serial"].as_u64().is_none()
+                    || (!c["loadFailure"].is_null() && !c["loadFailure"].is_boolean())
+                {
+                    return Err(bad());
+                }
+            }
+        }
+        Ok(())
+    }
+    fn repair_candidate(mut v: Value) -> Result<(Value, Vec<String>)> {
+        if !v.is_object() || !v["placements"].is_object() {
+            return Err(
+                "Layout cannot be repaired automatically; restore a matching backup.".into(),
+            );
+        }
+        let mut problems = Vec::new();
+        if Self::validate_runtime(&v["runtime"]).is_err() {
+            v["runtime"] = Value::Null;
+            problems.push("Invalid runtime controls quarantined".into());
+        }
+        let placements = v["placements"].clone();
+        v["placements"] = json!({});
+        // Refuse unknown versions/invalid registry metadata before isolating rows.
+        Self::validate_layout(v.clone())?;
+        for (id, placement) in placements.as_object().unwrap() {
+            v["placements"][id] = placement.clone();
+            if Self::validate_layout(v.clone()).is_err() {
+                v["placements"].as_object_mut().unwrap().remove(id);
+                problems.push(format!("Invalid placement quarantined: {id}"));
+                if id_ok(id) {
+                    v["retiredLegacyIds"][id] = json!(true);
+                }
+            }
+        }
+        if !v["runtime"]["edit"].is_null()
+            && v["placements"][v["runtime"]["edit"]["instance"].as_str().unwrap_or("")].is_null()
+        {
+            v["runtime"]["edit"] = Value::Null;
+            problems.push("Orphaned settings registration cleared".into());
+        }
+        Ok((Self::validate_layout(v)?, problems))
+    }
+    fn display_layout(&self) -> Result<(Value, Vec<String>)> {
+        match self.layout() {
+            Ok(v) => Ok((v, vec![])),
+            Err(original) => {
+                let (v, mut problems) = Self::repair_candidate(read_json(
+                    &self.state.join("layout.json"),
+                    1024 * 1024,
+                )?)?;
+                if problems.is_empty() {
+                    return Err(original);
+                }
+                problems.push("Saved layout needs repair. Valid widgets remain visible; choose Repair saved layout in Widgets. Original file preserved.".into());
+                Ok((v, problems))
+            }
+        }
+    }
+    fn repair(&self) -> Result<Value> {
+        let _lock = self.lock()?;
+        let path = self.state.join("layout.json");
+        let (mut v, problems) = Self::repair_candidate(read_json(&path, 1024 * 1024)?)?;
+        if problems.is_empty() {
+            return Ok(json!({"message":"Saved layout is valid; no changes made."}));
+        }
+        let backup = self
+            .state
+            .join(format!("layout-quarantine-{}.json", nonce()));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&backup)
+            .map_err(err)?;
+        file.write_all(&fs::read(&path).map_err(err)?)
+            .map_err(err)?;
+        file.sync_all().map_err(err)?;
+        File::open(&self.state)
+            .map_err(err)?
+            .sync_all()
+            .map_err(err)?;
+        // Repairing an older registry must not resurrect an absent legacy alias.
+        for id in self.ids(&v)? {
+            if v["placements"][&id].is_null() {
+                v["retiredLegacyIds"][id] = json!(true);
+            }
+        }
+        self.commit(&mut v)?;
+        Ok(
+            json!({"message":format!("Layout repaired. Original saved at {}",backup.display()),"backup":backup,"quarantined":problems}),
+        )
+    }
+    fn editor_remedy(l: &Value) -> String {
+        let id = l["runtime"]["edit"]["instance"]
+            .as_str()
+            .unwrap_or("unknown widget");
+        let package = l["placements"][id]["packageId"].as_str().unwrap_or(id);
+        format!("Settings pending for {package} ({id}). Save or cancel that window, cancel the pending settings in Widgets, or Restart {package} in Widgets → Available.")
+    }
+    fn clear_dead_editor(&self, package: Option<&str>) -> Result<()> {
+        let lock = self.lock()?;
+        let l = self.layout()?;
+        let id = l["runtime"]["edit"]["instance"].as_str().unwrap_or("");
+        if !id.is_empty() && package.is_none_or(|p| l["placements"][id]["packageId"] == p) {
+            self.finish_edit_locked(id, &l["runtime"]["edit"]["serial"].to_string(), &lock)?;
+        }
+        Ok(())
     }
     fn commit(&self, l: &mut Value) -> Result<()> {
         let path = self.state.join("layout.json");
@@ -512,7 +687,7 @@ impl Registry {
             if l["runtime"]["edit"]["instance"] == id {
                 return Ok(json!(true));
             }
-            return Err("Save or cancel the current settings window first".into());
+            return Err(Self::editor_remedy(&l));
         }
         l["runtime"]["edit"] = json!({"instance":id,"serial":l["revision"].as_u64().unwrap().checked_add(1).ok_or("Revision exhausted")?});
         self.commit(&mut l)?;
@@ -539,7 +714,7 @@ impl Registry {
     fn ensure_no_editor(&self, l: &Value, id: &str) -> Result<()> {
         let editor = l["runtime"]["edit"]["instance"].as_str().unwrap_or("");
         if l["placements"][editor]["packageId"] == id {
-            return Err("Save or cancel this package's settings before changing its code".into());
+            return Err(Self::editor_remedy(l));
         }
         Ok(())
     }
@@ -575,8 +750,11 @@ impl Registry {
         }
         match method {
             "reveal" => {
+                if !cfg!(feature = "experimental-reveal") {
+                    return Err("Quick reveal is experimental and disabled in this build. Use Widgets or Arrange widgets.".into());
+                }
                 if !runtime["edit"].is_null() {
-                    return Err("Finish settings before revealing widgets".into());
+                    return Err(Self::editor_remedy(&l));
                 }
                 let active =
                     reveal::active(runtime["revealUntil"].as_u64().unwrap_or(0), reveal::now());
@@ -609,19 +787,24 @@ impl Registry {
             "refresh" => (),
             _ => return Err("Unknown host control".into()),
         }
+        if l["runtime"] == runtime && method != "refresh" {
+            return Ok(json!({"runtime":runtime,"revision":l["revision"]}));
+        }
         l["runtime"] = runtime.clone();
         self.commit(&mut l)?;
         Ok(json!({"runtime":runtime,"revision":l["revision"]}))
     }
     fn snapshot(&self) -> Result<Value> {
-        let mut l = self.layout()?;
-        let active = reveal::active(
-            l["runtime"]["revealUntil"].as_u64().unwrap_or(0),
-            reveal::now(),
-        );
+        let (mut l, mut problems) = self.display_layout()?;
+        let repair_required = !problems.is_empty();
+        let active = cfg!(feature = "experimental-reveal")
+            && reveal::active(
+                l["runtime"]["revealUntil"].as_u64().unwrap_or(0),
+                reveal::now(),
+            );
         l["runtime"]["revealing"] = json!(active);
         let desktop = workspaces::snapshot();
-        if grid::migrate(&mut l["placements"], &desktop) {
+        if grid::migrate(&mut l["placements"], &desktop) && !repair_required {
             // Polling must not terminate the supervisor when an external writer holds the lock.
             if let Ok(_lock) = self.lock() {
                 let mut fresh = self.layout()?;
@@ -634,7 +817,6 @@ impl Registry {
         let effective = grid::resolve(&l["placements"], &desktop);
         let mut widgets = Vec::new();
         let mut catalog = Vec::new();
-        let mut problems = Vec::new();
         let theme_file = self
             .state
             .parent()
@@ -698,7 +880,7 @@ impl Registry {
             .map(|(id,p)| json!({"instanceId":id,"packageId":p["packageId"],"name":l["packages"][p["packageId"].as_str().unwrap()]["name"],"placement":p}))
             .collect();
         Ok(
-            json!({"api":2,"revision":l["revision"],"installed":widgets,"catalog":catalog,"retained":retained,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"],"desktop":desktop,"occupancy":effective.as_object().unwrap().values().cloned().collect::<Vec<_>>()}),
+            json!({"api":2,"repairRequired":repair_required,"experimentalReveal":cfg!(feature="experimental-reveal"),"revision":l["revision"],"installed":widgets,"catalog":catalog,"retained":retained,"problems":problems,"appearance":appearance,"palette":self.palette(),"runtime":l["runtime"],"desktop":desktop,"occupancy":effective.as_object().unwrap().values().cloned().collect::<Vec<_>>()}),
         )
     }
     fn install(&self, source: &Path) -> Result<Value> {
@@ -830,14 +1012,20 @@ impl Registry {
     }
     fn restore_settings(&self, id: &str, file: &Path) -> Result<Value> {
         let _lock = self.lock()?;
-        let value = read_json(file, 1024 * 1024)?;
+        let value = read_json(file, 1024 * 1024).map_err(|_| "That file is not a readable Widget Core settings export; current settings preserved".to_string())?;
         if value["format"] != 1 || value["packageId"] != id || !value["instances"].is_object() {
             return Err("Invalid settings export or package identity".into());
         }
         let mut l = self.layout()?;
         self.ensure_no_editor(&l, id)?;
         let m = manifest(&self.source(&l, id)?)?;
+        let mut skipped = Vec::new();
+        let mut restored = 0;
         for (instance, saved) in value["instances"].as_object().unwrap() {
+            if l["placements"][instance].is_null() {
+                skipped.push(instance.clone());
+                continue;
+            }
             let p = &mut l["placements"][instance];
             if p["packageId"] != id {
                 return Err(
@@ -850,6 +1038,7 @@ impl Registry {
                 saved["settingsVersion"].as_u64().unwrap_or(1),
                 &saved["settings"],
             )?;
+            restored += 1;
             p["settings"] = migrated;
             p["settingsVersion"] = json!(settings::version(&m));
             p["revision"] = json!(p["revision"]
@@ -858,8 +1047,15 @@ impl Registry {
                 .checked_add(1)
                 .ok_or("Revision exhausted")?);
         }
+        if restored == 0 {
+            return Err(
+                "No matching instances remain in this export; current settings preserved".into(),
+            );
+        }
         self.commit(&mut l)?;
-        Ok(json!({"restored":id,"revision":l["revision"]}))
+        Ok(
+            json!({"restored":id,"count":restored,"skippedRemovedInstances":skipped,"revision":l["revision"]}),
+        )
     }
     fn rollback(&self, id: &str) -> Result<Value> {
         let _lock = self.lock()?;
@@ -951,6 +1147,11 @@ impl Registry {
                 return Err("Create requires a package ID".into());
             }
             format!("instance-{}", nonce())
+        } else if operation == "add"
+            && l["placements"][id].is_null()
+            && l["retiredLegacyIds"][id] == true
+        {
+            format!("instance-{}", nonce())
         } else if operation == "duplicate" {
             if l["placements"][id].is_null() {
                 return Err("Add the widget before duplicating".into());
@@ -981,7 +1182,7 @@ impl Registry {
                 p["enabled"] = json!(true);
                 p["activationOrder"] = json!(activation_order);
             }
-            "add" | "duplicate" => {
+            "add" | "show" | "duplicate" => {
                 if p["enabled"] != true || operation == "duplicate" {
                     p["activationOrder"] = json!(activation_order);
                 }
@@ -1047,8 +1248,17 @@ impl Registry {
                 let grids = desktop["grids"]
                     .as_object()
                     .ok_or("Desktop unavailable; retry when connected")?;
-                let mut target = None;
+                let mut target = if (monitor.is_empty() || p["monitor"] == monitor)
+                    && grid::validate_change(&instance, &candidate, &current, &desktop).is_ok()
+                {
+                    Some(candidate.clone())
+                } else {
+                    None
+                };
                 'search: for (name, g) in grids {
+                    if target.is_some() {
+                        break;
+                    }
                     if !monitor.is_empty() && monitor != name {
                         continue;
                     }
@@ -1117,6 +1327,10 @@ impl Registry {
             }
         }
         let placement = l["placements"][&instance].clone();
+        if operation == "recover-placement" && self.layout()?["placements"][&instance] == placement
+        {
+            return Ok(json!({"updated":instance,"placement":placement,"revision":l["revision"]}));
+        }
         self.commit(&mut l)?;
         Ok(json!({"updated":instance,"placement":placement,"revision":l["revision"]}))
     }
@@ -1126,6 +1340,9 @@ impl Registry {
     fn remove_instance(&self, id: &str) -> Result<Value> {
         let _lock = self.lock()?;
         let mut l = self.layout()?;
+        if l["placements"][id]["packageId"] == id {
+            l["retiredLegacyIds"][id] = json!(true);
+        }
         if l["placements"]
             .as_object_mut()
             .unwrap()
@@ -1165,6 +1382,7 @@ impl Registry {
         }
         l["packages"][id] = json!({"current":null,"previous":null,"name":name});
         if policy == "delete" {
+            l["retiredLegacyIds"][id] = json!(true);
             l["placements"]
                 .as_object_mut()
                 .unwrap()
@@ -1238,12 +1456,12 @@ fn run(args: &[String]) -> Result<Value> {
     }
     if cmd == "help" {
         return Ok(
-            json!({"commands":["export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["repair","show INSTANCE_ID","export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
-        "list" => 1,
-        "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide"
+        "list" | "repair" => 1,
+        "validate" | "install" | "update" | "rollback" | "add" | "duplicate" | "hide" | "show"
         | "remove" | "remove-instance" | "control" | "export-settings" => 2,
         "place" | "configure" | "save" | "workspace" | "create" | "uninstall"
         | "recover-placement" | "restore-settings" => 3,
@@ -1258,6 +1476,7 @@ fn run(args: &[String]) -> Result<Value> {
     let r = Registry::from_env()?;
     match cmd {
         "list" => r.snapshot(),
+        "repair" => r.repair(),
         "control" => r.control(&args[1]),
         "install" => r.install(Path::new(&args[1])),
         "update" => r.deploy(Path::new(&args[1]), true),
@@ -1270,14 +1489,28 @@ fn run(args: &[String]) -> Result<Value> {
         _ => r.placement(&args[1], cmd, args.get(2).map(String::as_str)),
     }
 }
+fn retry_busy(mut operation: impl FnMut() -> Result<Value>) -> Result<Value> {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match operation() {
+            Err(e) if e.starts_with("Registry busy;") && std::time::Instant::now() < until => {
+                std::thread::sleep(std::time::Duration::from_millis(10))
+            }
+            result => return result,
+        }
+    }
+}
+fn error_response(e: &str) -> Value {
+    json!({"error":e.chars().take(1000).collect::<String>(),"code":if e.starts_with("Registry busy;") {"busy"} else if e.starts_with("Runner write budget") {"rate_limited"} else {"operation_failed"}})
+}
 fn main() {
-    match run(&env::args().skip(1).collect::<Vec<_>>()) {
+    let args: Vec<_> = env::args().skip(1).collect();
+    // Busy means the lock was refused before dispatch; retry no uncertain writes.
+    let result = retry_busy(|| run(&args));
+    match result {
         Ok(v) => println!("{v}"),
         Err(e) => {
-            println!(
-                "{}",
-                json!({"error":e.chars().take(240).collect::<String>()})
-            );
+            println!("{}", error_response(&e));
             std::process::exit(1)
         }
     }
@@ -1308,7 +1541,114 @@ mod tests {
     fn fixture(p: &Path) {
         fs::create_dir_all(p).unwrap();
         fs::write(p.join("View.qml"), "import QtQuick\nItem {}\n").unwrap();
-        fs::write(p.join("widget.json"),json!({"schemaVersion":1,"kind":"desktop-widget","coreApi":1,"id":"io.example.test","name":"Contract fixture","version":"0.1.0","entryPoint":"View.qml","defaultSize":"standard","sizes":{"standard":{"width":300,"height":200}},"defaults":{}}).to_string()).unwrap();
+        fs::write(p.join("widget.json"),json!({"schemaVersion":2,"kind":"desktop-widget","coreApi":3,"id":"io.example.test","name":"Contract fixture","version":"0.1.0","entryPoint":"View.qml","families":["medium"],"defaultFamily":"medium","defaults":{}}).to_string()).unwrap();
+    }
+    fn api_one_manifest(p: &Path) -> Value {
+        let mut m = read_json(&p.join("widget.json"), 16384).unwrap();
+        m["schemaVersion"] = json!(1);
+        m["coreApi"] = json!(1);
+        m["sizes"] = json!({"standard":{"width":300,"height":200}});
+        m["defaultSize"] = json!("standard");
+        m.as_object_mut().unwrap().remove("families");
+        m.as_object_mut().unwrap().remove("defaultFamily");
+        m
+    }
+    #[test]
+    fn api_one_rejected_by_validate_install_and_update_without_registry_changes() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let current = manifest(&src).unwrap();
+        let mut old = api_one_manifest(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        for schema in [1, 2] {
+            old["schemaVersion"] = json!(schema);
+            atomic_json(&src.join("widget.json"), &old).unwrap();
+            assert!(validate(&src)
+                .unwrap_err()
+                .contains("API 1 has been removed"));
+            assert!(r
+                .install(&src)
+                .unwrap_err()
+                .contains("API 1 has been removed"));
+            assert!(!r.state.join("layout.json").exists());
+            assert!(!r.data.join("versions").exists());
+        }
+        atomic_json(&src.join("widget.json"), &current).unwrap();
+        r.install(&src).unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        atomic_json(&src.join("widget.json"), &old).unwrap();
+        assert!(r
+            .deploy(&src, true)
+            .unwrap_err()
+            .contains("API 1 has been removed"));
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        assert_eq!(
+            r.snapshot().unwrap()["catalog"][0]["manifest"]["coreApi"],
+            3
+        );
+    }
+    #[test]
+    fn already_installed_api_one_is_not_loaded_and_rollback_cannot_restore_it() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        r.placement(
+            "io.example.test",
+            "configure",
+            Some(r#"{"label":"Keep me"}"#),
+        )
+        .unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        let old_path = r.source(&r.layout().unwrap(), "io.example.test").unwrap();
+        atomic_json(&old_path.join("widget.json"), &api_one_manifest(&old_path)).unwrap();
+        let snapshot = r.snapshot().unwrap();
+        assert!(snapshot["installed"].as_array().unwrap().is_empty());
+        assert!(snapshot["catalog"][0]["problem"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid package"));
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        r.deploy(&t.0.join("source"), true).unwrap();
+        let before_rollback = fs::read(r.state.join("layout.json")).unwrap();
+        assert!(r
+            .rollback("io.example.test")
+            .unwrap_err()
+            .contains("API 1 has been removed"));
+        assert_eq!(
+            fs::read(r.state.join("layout.json")).unwrap(),
+            before_rollback
+        );
+        assert_eq!(
+            r.snapshot().unwrap()["installed"][0]["manifest"]["coreApi"],
+            3
+        );
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.test"]["settings"]["label"],
+            "Keep me"
+        );
+    }
+    #[test]
+    fn placement_commands_reject_api_one_size_aliases() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        for size in ["compact", "standard", "wide"] {
+            let value = json!({"column":0,"row":0,"monitor":"DP-1","size":size}).to_string();
+            for operation in ["place", "recover-placement"] {
+                assert!(r
+                    .placement_using(
+                        "io.example.test",
+                        operation,
+                        Some(&value),
+                        grid::tests::desktop
+                    )
+                    .is_err());
+            }
+        }
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
     }
     #[test]
     fn deleted_instances_reject_every_stale_mutation_without_writes() {
@@ -2105,6 +2445,7 @@ mod tests {
         assert_eq!(r.layout().unwrap(), before);
     }
     #[test]
+    #[cfg(feature = "experimental-reveal")]
     fn reveal_toggles_without_changing_layout_or_hidden_preferences() {
         let t = Temp::new();
         let source = t.0.join("source");
@@ -2279,5 +2620,214 @@ mod tests {
         assert!(r.rollback("io.example.test").is_err());
         r.package_control("io.example.test", "restart").unwrap();
         r.rollback("io.example.test").unwrap();
+    }
+    fn review_registry(t: &Temp) -> Registry {
+        let source = t.0.join("source");
+        fixture(&source);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&source).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        r
+    }
+    #[test]
+    fn removed_legacy_lifetime_cannot_target_its_replacement() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        let sibling = r.placement("io.example.test", "duplicate", None).unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let sibling_before = r.layout().unwrap()["placements"][&sibling].clone();
+        r.remove_instance("io.example.test").unwrap();
+        let next = r.placement("io.example.test", "add", None).unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_ne!(next, "io.example.test");
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        for (op, value) in [
+            ("save", Some(r#"{"revision":0,"settings":{"old":true}}"#)),
+            ("hide", None),
+            ("show", None),
+            ("workspace", Some("all")),
+            (
+                "place",
+                Some(r#"{"column":0,"row":0,"monitor":"DP-1","size":"medium"}"#),
+            ),
+        ] {
+            assert!(r.placement("io.example.test", op, value).is_err(), "{op}");
+            assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        }
+        r.request_edit(&next).unwrap();
+        r.finish_edit("io.example.test", "1").unwrap();
+        assert_eq!(r.layout().unwrap()["runtime"]["edit"]["instance"], next);
+        r.clear_dead_editor(Some("io.example.test")).unwrap();
+        assert_eq!(r.layout().unwrap()["placements"][&sibling], sibling_before);
+        r.placement(
+            &next,
+            "save",
+            Some(r#"{"revision":0,"settings":{"new":true}}"#),
+        )
+        .unwrap();
+        r.uninstall("io.example.test", "delete").unwrap();
+        r.install(&t.0.join("source")).unwrap();
+        assert_ne!(
+            r.placement("io.example.test", "add", None).unwrap()["updated"],
+            "io.example.test"
+        );
+    }
+    #[test]
+    fn old_registry_without_tombstones_retires_absent_aliases() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        r.remove_instance("io.example.test").unwrap();
+        let mut v = r.layout().unwrap();
+        v.as_object_mut().unwrap().remove("retiredLegacyIds");
+        atomic_json(&r.state.join("layout.json"), &v).unwrap();
+        assert_ne!(
+            r.placement("io.example.test", "add", None).unwrap()["updated"],
+            "io.example.test"
+        );
+    }
+    #[test]
+    fn manager_writes_wait_for_short_locks_but_not_uncertain_results() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        let lock = r.lock().unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(80));
+            drop(lock);
+        });
+        retry_busy(|| r.placement("io.example.test", "hide", None)).unwrap();
+        release.join().unwrap();
+        let mut calls = 0;
+        assert!(retry_busy(|| {
+            calls += 1;
+            Err("Unknown response; write may have completed".into())
+        })
+        .is_err());
+        assert_eq!(calls, 1);
+    }
+    #[test]
+    fn recovery_keeps_a_valid_preferred_cell_without_a_commit() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        r.placement_using(
+            "io.example.test",
+            "place",
+            Some(r#"{"column":2,"row":1,"monitor":"DP-1","size":"medium"}"#),
+            grid::tests::desktop,
+        )
+        .unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        let ack = r
+            .placement_using(
+                "io.example.test",
+                "recover-placement",
+                Some(r#"{"size":"medium","monitor":"DP-1"}"#),
+                grid::tests::desktop,
+            )
+            .unwrap();
+        assert_eq!(ack["placement"]["cell"], json!({"column":2,"row":1}));
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+    }
+    #[test]
+    fn corrupt_placement_isolated_and_original_quarantined_before_repair() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        let valid = r.placement("io.example.test", "duplicate", None).unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let mut v = r.layout().unwrap();
+        v["placements"]["io.example.test"]["x"] = json!(-5);
+        atomic_json(&r.state.join("layout.json"), &v).unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        let snapshot = r.snapshot().unwrap();
+        assert_eq!(snapshot["repairRequired"], true);
+        assert!(snapshot["installed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["instanceId"] == valid));
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        assert!(r.placement(&valid, "hide", None).is_err());
+        let repaired = r.repair().unwrap();
+        assert_eq!(
+            fs::read(repaired["backup"].as_str().unwrap()).unwrap(),
+            before
+        );
+        assert!(r.layout().unwrap()["placements"]["io.example.test"].is_null());
+        assert!(r.layout().unwrap()["placements"][&valid].is_object());
+    }
+    #[test]
+    fn malformed_runtime_metadata_is_reported_without_panicking_or_writing() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        let original = r.layout().unwrap();
+        for runtime in [
+            json!("bad"),
+            json!([]),
+            json!({"edit":7}),
+            json!({"packageControls":{"io.example.test":false}}),
+        ] {
+            let mut v = original.clone();
+            v["runtime"] = runtime;
+            atomic_json(&r.state.join("layout.json"), &v).unwrap();
+            let before = fs::read(r.state.join("layout.json")).unwrap();
+            assert!(r.layout().unwrap_err().contains("runtime metadata"));
+            assert_eq!(r.snapshot().unwrap()["repairRequired"], true);
+            assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        }
+    }
+    #[test]
+    fn restore_retains_atomic_validation_and_skips_removed_instances() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        let other = r.placement("io.example.test", "duplicate", None).unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let export = r.export_settings("io.example.test").unwrap();
+        let file = Path::new(export["exported"].as_str().unwrap());
+        r.remove_instance(&other).unwrap();
+        r.placement("io.example.test", "configure", Some(r#"{"changed":true}"#))
+            .unwrap();
+        let restored = r.restore_settings("io.example.test", file).unwrap();
+        assert_eq!(restored["count"], 1);
+        assert_eq!(restored["skippedRemovedInstances"], json!([other]));
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.test"]["settings"],
+            json!({})
+        );
+        assert!(r
+            .restore_settings("io.example.test", Path::new("/etc/hostname"))
+            .unwrap_err()
+            .contains("settings export"));
+    }
+    #[test]
+    fn dead_editor_clears_only_its_package_and_old_close_cannot_close_new_editor() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        r.request_edit("io.example.test").unwrap();
+        let serial = r.layout().unwrap()["runtime"]["edit"]["serial"].to_string();
+        r.clear_dead_editor(Some("io.other.package")).unwrap();
+        assert!(!r.layout().unwrap()["runtime"]["edit"].is_null());
+        r.clear_dead_editor(Some("io.example.test")).unwrap();
+        assert!(r.layout().unwrap()["runtime"]["edit"].is_null());
+        r.request_edit("io.example.test").unwrap();
+        r.finish_edit("io.example.test", &serial).unwrap();
+        assert!(!r.layout().unwrap()["runtime"]["edit"].is_null());
+    }
+    #[test]
+    #[cfg(not(feature = "experimental-reveal"))]
+    fn normal_build_cannot_enable_reveal() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        assert!(r.control("reveal").unwrap_err().contains("experimental"));
+        assert_ne!(r.snapshot().unwrap()["runtime"]["revealing"], true);
     }
 }

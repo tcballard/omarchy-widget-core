@@ -49,7 +49,7 @@ Containment remains **per package**, including all its instances, proxy and chil
 processes. The existing systemd cgroup enforces CPU, memory and task limits.
 A bad instance can disrupt siblings in its package; unrelated package runners
 are separate. The trusted manager, compositor and OS remain shared dependencies.
-A QML load error is shown within the widget; runner health is process health,
+A QML load error is shown within the widget and reported through a retained, generation-bound message; runner health alone is process health,
 not a guarantee that every content component loaded successfully.
 
 Portable tests inject missing migrations, rename conflicts, schema-invalid saves,
@@ -74,9 +74,11 @@ The manager's Available tab exposes this action and displays the saved path.
 `omarchy-widget restore-settings PACKAGE /absolute/path/to/export.json` is an
 explicit replacement of settings for matching existing instance IDs. Close any
 settings editor first. Every imported setting is migrated/validated against the
-currently installed package under the same lock; one invalid/removed/foreign ID
-rejects the entire restore. Revisions advance, while positions and hidden state
-remain unchanged. Removed instances are never recreated. Save another export
+currently installed package under the same lock. One invalid setting, foreign
+existing identity or incompatible migration rejects changes to all matching
+instances. Removed identities are skipped and listed in the response; they are
+never recreated. A file with no matching instances is refused. Revisions advance,
+while positions and hidden state remain unchanged. Save another export
 before restoring edits you may want to retain. This is not cross-machine import.
 
 ## Failure outcomes
@@ -95,3 +97,20 @@ unacknowledged drafts. There is no automatic draft recovery promise. Regression
 tests cover injected staging/precommit/postcommit errors, migration refusal,
 restore refusal and explicit failed-content state. Actual power loss, disk-full,
 first-load presentation and supervisor replacement still require desktop tests.
+
+## Interrupted settings and damaged layout
+
+Closing settings retains its instance/serial acknowledgement until accepted or a
+snapshot confirms that registration is absent. The UI retries delivery after a
+full queue or transient refusal. A stale close never clears a later editor. The
+supervisor clears dead-runner registrations; Widgets also names the pending
+instance and offers Cancel pending settings. Restart in Available remains a remedy.
+
+`omarchy-widget repair` quarantines individually invalid placements and malformed
+runtime controls. The manager displays the valid subset without writing the file,
+shows a repair banner, and offers the same action. Repair first saves an exact,
+private `layout-quarantine-*.json` backup, then atomically commits the repaired
+layout. Retired identities are not reused. Unsupported versions, invalid package
+metadata and unparseable JSON require a matched backup; they are not guessed or
+silently reset. A read failure no longer terminates the supervisor and its current
+runners. Full disk/power-loss and real-desktop recovery still need acceptance.

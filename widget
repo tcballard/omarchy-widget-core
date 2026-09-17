@@ -11,6 +11,10 @@ start() {
   done
   systemctl --user start "$unit"
 }
+# Keep the historical global show command while routing explicit instance Show.
+if [[ "$method" == show && $# -eq 2 ]]; then
+  exec "$config/bin/omarchy-widget" "$@"
+fi
 case "$method" in
   bind-key) exec /usr/bin/bash "$config/bind-key" ;;
   start) start; exit $? ;;

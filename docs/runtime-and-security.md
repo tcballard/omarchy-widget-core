@@ -2,7 +2,7 @@
 
 ## Widget islands (v0.0.2 development)
 
-Trusted Core owns installation, the registry, durable settings, layout, themes and the manager. The main Omarchy shell loads only the compatibility bridge. A Rust supervisor starts a trusted manager and a separate systemd user service for each active package. That package service contains a worker, its Wayland proxy, policy hooks, Bubblewrap runner and all their descendants. Instances belonging to the same package share a runner and a trust boundary. Widget views and settings editors are never loaded by the manager.
+Trusted Core owns installation, the registry, durable settings, layout, themes and the manager. The main Omarchy shell loads only the compatibility bridge. A Rust supervisor starts the trusted manager on demand for Widgets, arrange mode or experimental reveal, and a separate systemd user service for each active package. The manager exits after its trusted surfaces close and queued operations finish; package settings remain owned by their runner. Manager launch retries are bounded to three attempts per open request with a five-second delay. Close and reopen Widgets to reset a failed request. That package service contains a worker, its Wayland proxy, policy hooks, Bubblewrap runner and all their descendants. Instances belonging to the same package share a runner and a trust boundary. Widget views and settings editors are never loaded by the manager.
 
 A runner is started for an enabled instance or an outstanding settings request. Replacing its package generation stops the old runner; the new runner loads the new immutable code. A runner or filter failure stops that island and allows up to three launch/failure attempts per Core session, with a five-second delay. Restart that package in Widgets to reset this budget, or use `package-control PACKAGE restart`. New code generations also reset it. Failures appear in the manager and logs.
 
@@ -32,7 +32,7 @@ This is a development security boundary, not an independently audited hostile-co
 
 Each package service has its own enforced budget: `MemoryMax=256M` (256 MiB), `MemorySwapMax=0`, `CPUQuota=25%` (one quarter of one CPU), and `TasksMax=64` (processes and threads combined). Instances from the same package share this budget. These are ceilings, not reserved allocations or measured typical consumption. CPU pressure throttles the package; the task ceiling rejects further task creation. `OOMPolicy=kill` makes a cgroup memory-exhaustion event terminate the entire offending package, including its proxy. The supervisor applies its existing three-attempt session budget and five-second retry delay.
 
-Core's manager, broker and systemd-run wait clients stay in `omarchy-widget-host.service`, with their own `MemoryMax=512M`, `CPUQuota=100%` and `TasksMax=256`. Package services are sibling cgroups in `app.slice`, not children of Core's memory/CPU budget. Core's task allowance accommodates wait clients for the supported package count; it is not granted to any widget. `BindsTo`, `After` and `PartOf` link package services to Core's lifetime. Explicit package teardown stops the transient unit with `KillMode=control-group`; killing a systemd-run client alone is not treated as cleanup. `omarchy-widget logs` includes package-unit logs.
+Core's manager, broker and systemd-run wait clients stay in `omarchy-widget-host.service`, with their own `MemoryMax=512M`, `CPUQuota=100%` and `TasksMax=256`. Package services are sibling cgroups in `app.slice`, not children of Core's memory/CPU budget. Core's task allowance accommodates wait clients for the supported package count; it is not granted to any widget. `BindsTo` and `After` stop package services when Core stops. `PartOf` is deliberately absent: propagating a host restart would relaunch stale runners alongside the new supervisor's generation. Only the supervisor creates replacement runners. Explicit package teardown stops the transient unit with `KillMode=control-group`; killing a systemd-run client alone is not treated as cleanup. `omarchy-widget logs` includes package-unit logs.
 
 Before executing the proxy or widget code, the worker reads its actual cgroup v2 controller files and rejects absent, unlimited or weaker CPU/memory/task limits, nonzero swap allowance or missing group OOM handling. The installer runs the same checks in a temporary constrained service before replacing Core, without starting the installed Core service. There is no unrestricted fallback. This requires systemd 254+ and CPU, memory and pids controllers available to the user manager. The installer does not edit system-wide controller delegation. Defaults are Core-owned; widget manifests cannot raise them.
 
@@ -51,3 +51,27 @@ The shared cards, edit affordances and snap grid in [omarchy-desktop-widgets](ht
 Trusted Core now performs a fixed `j/monitors` query through Hyprland's Unix control socket. It imports `HYPRLAND_INSTANCE_SIGNATURE` alongside the existing desktop routing variables. Widget sandboxes still receive no control socket or session signature. Bounded output names, active workspace IDs, usable cell grids, frame metrics and anonymous occupancy are included in snapshots; query responses have a 64 KiB cap, a 100 ms read deadline and a 250 ms shared cache. Four fixed getoption requests read global gaps, border size and rounding. Missing/malformed/unavailable desktop data leaves all widgets unplaced. This does not add fullscreen detection or expand allowed Wayland protocols.
 
 The workspace restriction is enforced by the cooperative Core host's visibility/Loader logic, not by the Wayland proxy. A hostile package is not prevented from creating another permitted bottom-layer surface. The broker separately prevents cross-package assignment changes.
+
+## Application boundary and combined-review changes
+
+Core is an external supervised desktop application. Its optional shell plugin is
+only a bridge; it does not load widget QML. This deliberate process separation
+supports per-package containment and differs from Omarchy's ordinary in-shell
+plugin guidance. The development install layout is not proof of marketplace or
+upstream acceptance. See the README for scope and remaining packaging work.
+
+Package mutations retain atomic generation authorization. Shared-lock reads and
+bounded pre-dispatch busy retries reduce contention without replaying uncertain
+writes. Five mutation attempts per second per runner bound broker write churn;
+packages cannot enter global arrangement. Ordinary widget surfaces use on-demand
+keyboard focus, never exclusive capture. Reveal privileges are disabled in the
+default build; only the explicit experimental feature can enable the prototype.
+
+Weather fetches have a 30-second pending deadline in the suspend-aware clock domain.
+Expired work becomes retryable/evictable. A fetch serial prevents a late completion
+from overwriting a newer request or a re-created cache entry. This remains one
+fixed provider, not a generic networking service or provider framework.
+
+The supervisor waits on broker socket readiness instead of waking every 20 ms. One-second housekeeping still discovers registry, desktop and runner-liveness changes; broker connections wake it immediately. Runner snapshot polling remains at one second to preserve workspace/theme response. A closed manager contributes no recurring snapshot poll. Fully event-driven desktop/theme updates are not claimed.
+
+The September 17 live baseline measured one World Clock plus a closed resident manager at 237.4 MiB mean combined PSS and 2.39% of one core. The manager Quickshell process accounted for 134.4 MiB PSS. After the manager lifecycle and supervisor-wait changes, the same desktop scenario at source `90fae72` measured 90.6 MiB combined mean PSS and 1.58% of one core: reductions of 146.7 MiB (61.8%) and 0.80 percentage points (33.7%). The host fell to 1.9 MiB PSS and 0.44% CPU; the World Clock island measured 88.7 MiB PSS and 1.14% CPU. Exactly one current-generation island remained throughout 58 samples, the manager process was absent, and no visibility binding warning occurred during the capture. These figures cover one machine and one 60-second steady-state trial; multi-package scaling still requires measurement.

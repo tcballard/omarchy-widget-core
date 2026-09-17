@@ -1,5 +1,7 @@
 # Quick reveal
 
+**Disabled by default.** This prototype requires the explicit `experimental-reveal` Cargo feature. The normal install does not enable it. Runner restarts, latency, focus restoration, lock and suspend remain desktop acceptance work.
+
 `omarchy-widget reveal` toggles a 30-second glance at enabled widgets on their
 assigned workspaces. `omarchy-widget dismiss-reveal` ends it. Escape dismisses
 from Core's trusted keyboard surface. The manager remains a separate action.

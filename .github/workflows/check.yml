@@ -9,12 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: rustfmt, clippy
+      - run: python3 tests/desktop_review.py
       - run: cargo fmt --all -- --check
       - run: cargo test --locked
+      - run: cargo test --locked --features experimental-reveal
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Record Rust release binary footprint
+        run: |
+          cargo build --locked --release
+          stat --printf='Rust release binary: %s bytes\n' target/release/omarchy-widget
+          sha256sum target/release/omarchy-widget
       - uses: actions/checkout@v4
         with:
           repository: tcballard/omarchy-widget-core
@@ -28,8 +35,17 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap python3-pip libegl1 libopengl0
+      - run: sudo /usr/bin/python3 -m pip install PySide6==6.11.2
       - run: python3 tests/sandbox.py --live
+      - run: /usr/bin/python3 tests/preview_contract.py --sandbox
+      - uses: actions/checkout@v4
+        with:
+          repository: tcballard/omarchy-widget-worldclock
+          ref: e23549064d28d22d78c679d9d0b042f9532bafa1
+          path: test-results/worldclock
+          persist-credentials: false
+      - run: bash sdk/capture-package test-results/worldclock test-results/clock-sandbox-previews
   qml:
     runs-on: ubuntu-latest
     steps:
@@ -40,11 +56,14 @@ jobs:
       - run: sudo apt-get update
       - run: sudo apt-get install -y libegl1 libopengl0
       - run: pip install PySide6==6.11.2
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: cargo build --locked
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/lifecycle.py
+      - run: python3 tests/window_lifecycle.py
       - run: python3 tests/sdk.py target/debug/omarchy-widget
+      - run: python3 tests/preview_contract.py
+      - run: python3 tests/review_delivery.py target/debug/omarchy-widget
       - run: python3 tests/package_helpers.py target/debug/omarchy-widget
       - run: python3 tests/countdown_integration.py target/debug/omarchy-widget
       - run: python3 tests/runtime_integration.py target/debug/omarchy-widget
@@ -53,14 +72,18 @@ jobs:
           for scale in 1 1.25 1.5 2; do
             QT_SCALE_FACTOR="$scale" python3 tests/manager_integration.py target/debug/omarchy-widget
           done
+          for repeat in 1 2 3; do
+            QT_SCALE_FACTOR=1.5 python3 tests/manager_integration.py target/debug/omarchy-widget
+          done
       - name: Fetch the pinned World Clock API 3 integration fixture
         uses: actions/checkout@v4
         with:
           repository: tcballard/omarchy-widget-worldclock
-          ref: e65a5fb6229f5c5b769b65e6997a5a3fd0911896
+          ref: e23549064d28d22d78c679d9d0b042f9532bafa1
           path: test-results/worldclock
           persist-credentials: false
       - run: python3 tests/worldclock_integration.py target/debug/omarchy-widget test-results/worldclock
+      - run: python3 sdk/render_previews.py test-results/clock-previews --package test-results/worldclock
       - run: python3 tests/installer.py
       - run: python3 tests/keybinding.py
       - uses: actions/setup-node@v4
@@ -74,15 +97,17 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: cargo build --locked
       - run: bash build-wayland-filter
       - run: python3 tests/wayland_filter.py target/wl-mitm-source/target/release/wl-mitm target/debug/omarchy-widget
+      - run: cargo build --locked --features experimental-reveal
+      - run: python3 tests/wayland_filter.py target/wl-mitm-source/target/release/wl-mitm target/debug/omarchy-widget --experimental-reveal
   resources:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - run: cargo build --locked
       - name: Exercise resource isolation in a disposable user session
         run: |

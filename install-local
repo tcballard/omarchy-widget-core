@@ -12,7 +12,9 @@ if [[ -e "$destination" && "${1:-}" != --update ]]; then
   echo 'Core already installed. Use bash install-local --update.' >&2; exit 1
 fi
 # The 0.1.x → 0.0.2 reset is intentional; compare contracts, not version order.
-cargo build --manifest-path "$root/Cargo.toml" --locked --release
+cargo_features=()
+if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_REVEAL:-0} == 1 ]]; then cargo_features+=(--features experimental-reveal); fi
+cargo build --manifest-path "$root/Cargo.toml" --locked --release "${cargo_features[@]}"
 bash "$root/build-wayland-filter"
 omarchy plugin validate "$root"
 "$root/target/release/omarchy-widget" list >/dev/null
