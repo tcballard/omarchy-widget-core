@@ -104,6 +104,16 @@ pub fn contract(m: &Value) -> Result<()> {
     if m["settingsSchema"]["type"] != "object" {
         return Err("Declarative settings require a schema".into());
     }
+    if m["settingsSchema"]["properties"]
+        .as_object()
+        .is_none_or(|props| {
+            props
+                .keys()
+                .any(|key| ["__proto__", "constructor", "prototype"].contains(&key.as_str()))
+        })
+    {
+        return Err("Invalid declarative settings keys".into());
+    }
     node(&m["view"], m, 0, &mut 0, false)?;
     let fields = m["settingsUi"]
         .as_array()
@@ -127,19 +137,13 @@ pub fn contract(m: &Value) -> Result<()> {
                 if schema["type"] == "string"
                     && schema["enum"].as_array().is_some_and(|a| {
                         !a.is_empty() && a.len() <= 8 && a.iter().all(Value::is_string)
-                    }) =>
-            {
-                ()
-            }
+                    }) => {}
             "timezone-list"
                 if schema["type"] == "array"
                     && schema["maxItems"].as_u64().is_some_and(|n| n <= 12)
                     && schema["items"]["type"] == "object"
                     && schema["items"]["properties"]["label"]["type"] == "string"
-                    && schema["items"]["properties"]["zone"]["type"] == "string" =>
-            {
-                ()
-            }
+                    && schema["items"]["properties"]["zone"]["type"] == "string" => {}
             _ => return Err("Unsupported generated settings control".into()),
         }
     }

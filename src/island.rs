@@ -368,6 +368,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
     let mut manager: Option<Child> = None;
     let mut manager_attempts = 0;
     let mut manager_retry = Instant::now();
+    let mut shared_generation = Value::Null;
+    let mut manager_requested = false;
     let mut runners: BTreeMap<String, Runner> = BTreeMap::new();
     let mut dead_editors: BTreeMap<String, String> = BTreeMap::new();
     let mut failures: BTreeMap<String, (u32, Instant)> = BTreeMap::new();
@@ -406,6 +408,27 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         continue;
                     }
                 };
+                // Explicit package restart/update or a fresh manager request also
+                // recovers a shared renderer that exhausted its crash budget.
+                let generation = json!(snapshot["catalog"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|entry| declarative::is(&entry["manifest"]))
+                    .map(|entry| json!([
+                        entry["packageId"],
+                        entry["directory"],
+                        snapshot["runtime"]["packageControls"]
+                            [entry["packageId"].as_str().unwrap_or("")]["serial"]
+                    ]))
+                    .collect::<Vec<_>>());
+                let requested = snapshot["runtime"]["managerOpen"] == true;
+                if generation != shared_generation || (requested && !manager_requested) {
+                    manager_attempts = 0;
+                    manager_retry = Instant::now();
+                    shared_generation = generation;
+                }
+                manager_requested = requested;
                 if manager_required(&snapshot) {
                     if manager.is_none() && manager_attempts < 3 && Instant::now() >= manager_retry
                     {
@@ -659,6 +682,9 @@ mod tests {
     fn declarative_widgets_share_trusted_renderer() {
         let mut snapshot = json!({"runtime":{},"installed":[{"instanceId":"clock-a","packageId":"clock","manifest":{"renderer":"declarative"},"placement":{"enabled":true}}]});
         assert!(manager_required(&snapshot));
+        snapshot["runtime"]["shown"] = json!(false);
+        assert!(!manager_required(&snapshot));
+        snapshot["runtime"]["shown"] = json!(true);
         snapshot["runtime"]["packageControls"]["clock"]["disabled"] = json!(true);
         assert!(!manager_required(&snapshot));
         snapshot["runtime"]["packageControls"]["clock"]["disabled"] = json!(false);

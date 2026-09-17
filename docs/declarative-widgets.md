@@ -37,7 +37,7 @@ there is no QML entry point for declarative widgets.
 This is an excerpt: identity, schemaVersion 2/coreApi 3, families, defaults,
 settingsSchema and settingsUi are also required. See
 [the complete World Clock](../examples/declarative-clock/widget.json).
-Old hosts reject the missing required feature rather than treating this as QML.
+Older hosts reject this package during validation; it cannot silently run as QML.
 
 Bindings are literal strings, `{ "setting": "topLevelKey" }`, or inside repeat,
 `{ "item": "label" }` / `{ "item": "zone" }`. There is no evaluation language.
@@ -73,7 +73,8 @@ A Core renderer defect can affect all declarative widgets. Strict limits reduce
 that risk but do not give them separate process isolation. Package disable/hide
 removes that package's surfaces; advanced QML code still cannot access this
 process or unfiltered Wayland. The shared process remains under the host service
-resource limits. The installed proxy is still needed for the optional QML path.
+resource limits. Hide-all releases it after queued acknowledgements when no
+manager or editor is open; Show starts it again. The installed proxy is still needed for the optional QML path.
 
 ## Development test and migration
 
