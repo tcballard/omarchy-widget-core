@@ -18,9 +18,9 @@ Rectangle {
     border.color: Color.accent
     opacity: enabled?1:0.45
     activeFocusOnTab: focusable
-    onActiveFocusChanged: if(activeFocus) Qt.callLater(function() {
+    onActiveFocusChanged: if(activeFocus) {
         for(var p=root.parent;p;p=p.parent) if(typeof p.ensureVisible === "function") { p.ensureVisible(root); break; }
-    })
+    }
     Accessible.role: Accessible.Button
     Accessible.name: text
     Accessible.onPressAction: if(enabled) clicked()

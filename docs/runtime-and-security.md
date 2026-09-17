@@ -51,3 +51,23 @@ The shared cards, edit affordances and snap grid in [omarchy-desktop-widgets](ht
 Trusted Core now performs a fixed `j/monitors` query through Hyprland's Unix control socket. It imports `HYPRLAND_INSTANCE_SIGNATURE` alongside the existing desktop routing variables. Widget sandboxes still receive no control socket or session signature. Bounded output names, active workspace IDs, usable cell grids, frame metrics and anonymous occupancy are included in snapshots; query responses have a 64 KiB cap, a 100 ms read deadline and a 250 ms shared cache. Four fixed getoption requests read global gaps, border size and rounding. Missing/malformed/unavailable desktop data leaves all widgets unplaced. This does not add fullscreen detection or expand allowed Wayland protocols.
 
 The workspace restriction is enforced by the cooperative Core host's visibility/Loader logic, not by the Wayland proxy. A hostile package is not prevented from creating another permitted bottom-layer surface. The broker separately prevents cross-package assignment changes.
+
+## Application boundary and combined-review changes
+
+Core is an external supervised desktop application. Its optional shell plugin is
+only a bridge; it does not load widget QML. This deliberate process separation
+supports per-package containment and differs from Omarchy's ordinary in-shell
+plugin guidance. The development install layout is not proof of marketplace or
+upstream acceptance. See the README for scope and remaining packaging work.
+
+Package mutations retain atomic generation authorization. Shared-lock reads and
+bounded pre-dispatch busy retries reduce contention without replaying uncertain
+writes. Five mutation attempts per second per runner bound broker write churn;
+packages cannot enter global arrangement. Ordinary widget surfaces use on-demand
+keyboard focus, never exclusive capture. Reveal privileges are disabled in the
+default build; only the explicit experimental feature can enable the prototype.
+
+Weather fetches have a 30-second pending deadline in the suspend-aware clock domain.
+Expired work becomes retryable/evictable. A fetch serial prevents a late completion
+from overwriting a newer request or a re-created cache entry. This remains one
+fixed provider, not a generic networking service or provider framework.

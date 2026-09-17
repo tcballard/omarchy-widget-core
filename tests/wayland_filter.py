@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='wl-filter-test-') as tmp:
                 request=message(2,0,uint(number)+string(name)+uint(4)+uint(obj));client.sendall(request);assert recv(server)==request
             request=message(3,0,uint(5));client.sendall(request);assert recv(server)==request
             request=message(4,0,uint(6)+uint(5)+uint(0)+uint(layer)+string('widget-test'));client.sendall(request)
-            if layer==1 or leased:
+            if layer==1 or (leased and '--experimental-reveal' in sys.argv):
                 assert recv(server)==request, 'Valid bottom-layer surface blocked'
                 # Exclusive keyboard capture must be rejected as well.
                 client.sendall(message(6,4,uint(1)))

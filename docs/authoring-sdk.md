@@ -89,3 +89,19 @@ revisioned action API. `python3 tests/countdown_integration.py
 Rust storage, two independent instances and the shared keyboard gear. The Clock
 integration additionally checks action-versus-editor conflicts. Preview rendering
 is not evidence for timer alarms during sleep; no background alarm service exists.
+
+## Preview contract and limitations
+
+Capture supplies deterministic API 3 identity, settings/revision, save state,
+weather state, appearance and the real lifecycle interface. It is inactive and
+side-effect methods return without saving or fetching. `Quickshell.Io.Process`,
+`StdioCollector` and `IpcHandler` imports have capture-only inert implementations:
+no helper command runs and no IPC endpoint opens. This allows World Clock to render
+its real inactive/loading surface in all families; it is not a screenshot of live
+clock data or a runtime-integration test. Unsupported Quickshell modules fail
+visibly. Use an Omarchy session for live content and actual runtime acceptance.
+
+`tests/preview_contract.py` exercises a separate consumer of every public context
+member and verifies disabled side effects. CI also runs it and pinned World Clock
+through the Bubblewrap capture wrapper. The preview watchdog is not the installed
+runner's cgroup resource policy; only use reviewed/trusted packages.

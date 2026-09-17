@@ -4,7 +4,7 @@ Experimental API 3. See [compatibility.md](compatibility.md). Package version, m
 
 ## Identity and manifest
 
-A package has a reverse-domain `id`; v0.0.2 supports one widget definition (`main`) per package. Desktop instances have independent `instanceId` values and settings. Manager Add and `create` always allocate a fresh identity; legacy `add PACKAGE` retains the package ID. `duplicate` also creates a fresh identity.
+A package has a reverse-domain `id`; v0.0.2 supports one widget definition (`main`) per package. Desktop instances have independent `instanceId` values and settings. Manager Add and `create` always allocate a fresh identity; legacy `add PACKAGE` may use the package ID only for its first lifetime; a replacement receives a fresh ID. Retired aliases are persisted across restarts and uninstall. `duplicate` also creates a fresh identity.
 
 See `examples/notes/widget.json` for a complete API 3 package. Required fields: `schemaVersion:2`, `kind:"desktop-widget"`, `coreApi:3`, `id`, `name`, numeric `version`, relative QML `entryPoint`, unique `families`, `defaultFamily`, object `defaults`. Optional `settingsEntryPoint` supplies the editor body. Families are `small`, `medium`, `large`; Core owns dimensions, frame, padding and movement.
 
@@ -89,7 +89,7 @@ New commands:
 
 `duplicate` copies current settings and placement preferences into a new identity;
 `create` uses manifest defaults. `add` still shows an existing instance or creates
-the legacy package-ID instance. `remove PACKAGE_ID` retains its old destructive
+a first legacy package-ID instance, or a fresh replacement after that identity has been retired. `show INSTANCE_ID` only enables an existing instance. `remove PACKAGE_ID` retains its old destructive
 meaning as an alias for `uninstall PACKAGE_ID delete`.
 
 Optional manifest `previews` maps supported family names to relative `.png` paths,
@@ -134,5 +134,24 @@ Frame appearance belongs to the desktop. Legacy per-instance appearance values
 remain in saved settings for compatibility but do not override the shared frame.
 Widget content can interpret its own settings within the frame.
 
-API 3 configurable widgets receive a Core-owned, keyboard-accessible settings gear.
+API 3 configurable widgets receive a Core-owned 32-unit corner settings gear, without a permanent header band. It is in the Qt Tab order. Normal surfaces request on-demand focus; the manager's Configure action remains the keyboard entry route. Actual Hyprland focus/accessibility is an outstanding acceptance gate.
 Do not add another gear in package content. API 1/2 retain their existing content controls.
+
+### Delivery and recovery boundaries
+
+Broker reads take shared registry locks; generation validation and mutations retain
+one exclusive lock. Trusted CLI requests retry only a typed pre-dispatch busy refusal
+for up to two seconds. The UI queue also backs off boundedly on busy/rate-limit
+refusals. Timeouts and unknown outcomes are never automatically replayed for saves,
+Add, Duplicate or toggle operations.
+
+Editor-close acknowledgements and content-failure reports are idempotent and kept
+pending through refusal or a full queue. An editor close includes its registration
+serial; a content report is bound to its package runner generation. A stale report
+cannot stop replacement code. A dead runner's editor is cleared by the supervisor;
+startup clears registrations from the prior supervisor lifetime. The manager can
+cancel a pending registration without guessing which invisible window to close.
+
+Each package runner has a rolling budget of five mutation attempts per second.
+Reads do not consume it. Runners may finish arrangement, but cannot start or toggle
+global arrangement. The manager and trusted CLI own that action.

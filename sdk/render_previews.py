@@ -3,6 +3,7 @@
 import json,os,sys,tempfile
 from pathlib import Path
 os.environ['QT_QPA_PLATFORM']='offscreen'
+os.environ.setdefault('QT_QUICK_BACKEND','software')
 from PySide6.QtQuick import QQuickWindow
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtCore import QUrl,QTimer,QMetaObject
@@ -21,14 +22,25 @@ import "CORE" as Core
 Window {
     id:window; width:192;height:192;visible:true;color:Color.background
     property string family:"small"
-    QtObject {
+    Core.Lifecycle {
         id:context
+        readonly property int api:3
+        readonly property string instanceId:"preview-instance"
+        readonly property string packageId:PACKAGE_ID
+        readonly property string definitionId:"main"
+        readonly property string sizeName:window.family
+        readonly property int draftRevision:settingsRevision
+        readonly property bool inputRequested:false
+        readonly property var weather:({state:"unavailable",data:null,error:"Preview has no network access"})
+        readonly property var saveState:({saving:false,saved:false,error:""})
+        function requestWeather(latitude,longitude) { return false; }
+        function requestInput(enabled) { return false; }
         readonly property var theme:Color
         readonly property var metrics:Style
         readonly property var settings:DEFAULTS
         readonly property int settingsRevision:1
         readonly property string family:window.family
-        readonly property bool active:false
+        active:false
         readonly property bool saving:false
         readonly property bool saved:false
         readonly property string saveError:""
@@ -46,9 +58,9 @@ Window {
     }
     Component.onCompleted:Style.fontFamily="DejaVu Sans"
 }
-'''.replace('CORE',(root/'qml').as_uri()).replace('VIEW',json.dumps(entry.as_uri())).replace('DEFAULTS',json.dumps(manifest['defaults'])).replace('NAME',json.dumps(manifest['name'])).replace('CONFIGURABLE','true' if manifest.get('settingsEntryPoint') else 'false')
+'''.replace('PACKAGE_ID',json.dumps(manifest['id'])).replace('CORE',(root/'qml').as_uri()).replace('VIEW',json.dumps(entry.as_uri())).replace('DEFAULTS',json.dumps(manifest['defaults'])).replace('NAME',json.dumps(manifest['name'])).replace('CONFIGURABLE','true' if manifest.get('settingsEntryPoint') else 'false')
     (p/'Preview.qml').write_text(qml)
-    app=QGuiApplication([]);engine=QQmlApplicationEngine();engine.addImportPath(tmp)
+    app=QGuiApplication([]);engine=QQmlApplicationEngine();engine.addImportPath(tmp);engine.addImportPath(str(root/'sdk/preview-imports'))
     warnings=[];engine.warnings.connect(lambda errors:warnings.extend(e.toString() for e in errors))
     engine.load(QUrl.fromLocalFile(str(p/'Preview.qml')));assert engine.rootObjects()
     window=engine.rootObjects()[0];sizes=[v for v in [('small',192,192),('medium',394,192),('large',394,394)] if v[0] in manifest['families']]

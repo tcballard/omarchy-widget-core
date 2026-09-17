@@ -67,8 +67,13 @@ fn scoped(
     args: &[String],
 ) -> Result<Value> {
     // Hold authority, ownership checks and mutation under the same registry lock.
-    let lock = r.lock()?;
-    let layout = r.layout()?;
+    let reading = matches!(args.first().map(String::as_str), Some("list" | "weather"));
+    let lock = if reading { r.read_lock()? } else { r.lock()? };
+    let layout = if args.first().is_some_and(|op| op == "list") {
+        r.display_layout()?.0
+    } else {
+        r.layout()?
+    };
     if r.source(&layout, package)? != source
         || layout["runtime"]["packageControls"][package]["serial"]
             .as_u64()
@@ -167,21 +172,41 @@ fn scoped(
                 &lock,
             )
         }
-        Some("control")
-            if args.len() == 2 && ["arrange", "finish-arrange"].contains(&args[1].as_str()) =>
-        {
+        Some("control") if args.len() == 2 && args[1] == "finish-arrange" => {
             r.control_locked(&args[1], &lock)
         }
         _ => Err("Operation is not available to widget runners".into()),
     }
 }
 
+#[derive(Default)]
+struct WriteBudget(std::collections::VecDeque<Instant>);
+impl WriteBudget {
+    fn admit(&mut self, args: &[String], now: Instant) -> Result<()> {
+        if matches!(args.first().map(String::as_str), Some("list" | "weather")) {
+            return Ok(());
+        }
+        while self
+            .0
+            .front()
+            .is_some_and(|start| now.saturating_duration_since(*start) >= Duration::from_secs(1))
+        {
+            self.0.pop_front();
+        }
+        if self.0.len() >= 5 {
+            return Err("Runner write budget exceeded; retry shortly".into());
+        }
+        self.0.push_back(now);
+        Ok(())
+    }
+}
 fn serve(
     listener: &UnixListener,
     r: &Registry,
     package: &str,
     source: &Path,
     serial: u64,
+    writes: &mut WriteBudget,
 ) -> Result<()> {
     // A fixed connection budget prevents one runner starving all the others.
     for _ in 0..1 {
@@ -193,10 +218,10 @@ fn serve(
         let result = (|| {
             let bytes = read_message(&mut stream, REQUEST_LIMIT, Duration::from_millis(100))?;
             let args: Vec<String> = serde_json::from_slice(&bytes).map_err(err)?;
+            writes.admit(&args, Instant::now())?;
             scoped(r, package, source, serial, &args)
         })();
-        let response =
-            result.unwrap_or_else(|e| json!({"error":e.chars().take(240).collect::<String>()}));
+        let response = result.unwrap_or_else(|e| error_response(&e));
         let _ = write_message(
             &mut stream,
             response.to_string().as_bytes(),
@@ -248,6 +273,7 @@ struct Runner {
     listener: UnixListener,
     unit: String,
     child: Child,
+    writes: WriteBudget,
 }
 impl Drop for Runner {
     fn drop(&mut self) {
@@ -320,6 +346,7 @@ fn launch(
         listener,
         unit,
         child,
+        writes: WriteBudget::default(),
     })
 }
 
@@ -334,6 +361,9 @@ pub fn supervise(config: &Path) -> Result<Value> {
     let base = runtime.join(format!("omarchy-widget-islands-{}", std::process::id()));
     fs::create_dir(&base).map_err(err)?;
     fs::set_permissions(&base, fs::Permissions::from_mode(0o700)).map_err(err)?;
+    // No runner from this supervisor lifetime exists yet. A persisted editor
+    // cannot refer to an open window; clear its registration before launch.
+    let _ = retry_busy(|| r.clear_dead_editor(None).map(|()| json!(true)));
     let mut manager = Command::new("/usr/bin/qs")
         .args(["--no-duplicate", "-p"])
         .arg(config)
@@ -343,6 +373,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
         .spawn()
         .map_err(err)?;
     let mut runners: BTreeMap<String, Runner> = BTreeMap::new();
+    let mut dead_editors = std::collections::BTreeSet::new();
     let mut failures: BTreeMap<String, (u32, Instant)> = BTreeMap::new();
     let mut generations: BTreeMap<String, (PathBuf, u64)> = BTreeMap::new();
     let result = (|| {
@@ -352,7 +383,21 @@ pub fn supervise(config: &Path) -> Result<Value> {
                 return Err("Widget manager exited".into());
             }
             if Instant::now() >= next_scan {
-                let snapshot = r.snapshot()?;
+                let snapshot = match r.snapshot() {
+                    Ok(snapshot) => snapshot,
+                    Err(e) => {
+                        // Preserve current runners and keep the manager available
+                        // for recovery even if the saved file cannot be parsed.
+                        eprintln!("Widget layout unavailable: {e}");
+                        let _ = atomic_json(
+                            &r.state.join("runner-health.json"),
+                            &json!({"updatedAt":reveal::now(),"error":e}),
+                        );
+                        next_scan = Instant::now() + Duration::from_secs(1);
+                        std::thread::sleep(Duration::from_millis(20));
+                        continue;
+                    }
+                };
                 let reveal_until = if snapshot["runtime"]["revealing"] == true {
                     snapshot["runtime"]["revealUntil"].as_u64().unwrap_or(0)
                 } else {
@@ -394,7 +439,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     wanted.get(id) == Some(&runner.source) && runner.reveal_until == reveal_until
                 });
                 for (id, source) in wanted {
-                    if runners.contains_key(&id) {
+                    // Finish recovery before a replacement can open a new editor.
+                    if runners.contains_key(&id) || dead_editors.contains(&id) {
                         continue;
                     }
                     if let Some((count, when)) = failures.get(&id) {
@@ -416,6 +462,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         }
                         Err(e) => {
                             eprintln!("Widget {id}: {e}");
+                            dead_editors.insert(id.clone());
                             let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                             failures.insert(id.clone(), (count, Instant::now()));
                             if !runners
@@ -462,14 +509,23 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     }
                     continue;
                 }
-                serve(&runner.listener, &r, id, &runner.source, runner.serial)?;
+                serve(
+                    &runner.listener,
+                    &r,
+                    id,
+                    &runner.source,
+                    runner.serial,
+                    &mut runner.writes,
+                )?;
             }
             for id in dead {
+                dead_editors.insert(id.clone());
                 runners.remove(&id);
                 let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                 failures.insert(id.clone(), (count, Instant::now()));
                 eprintln!("Widget {id} stopped; failure {count}/3 (restart this package in Widgets to retry)");
             }
+            dead_editors.retain(|id| r.clear_dead_editor(Some(id)).is_err());
             std::thread::sleep(Duration::from_millis(20));
         }
     })();
@@ -608,7 +664,15 @@ mod tests {
         let listener = UnixListener::bind(&socket_path).unwrap();
         let socket_string = socket_path.to_str().unwrap().to_owned();
         let request = std::thread::spawn(move || client(&socket_string, &["list".into()]));
-        serve(&listener, &r, "io.test.a", &source, 0).unwrap();
+        serve(
+            &listener,
+            &r,
+            "io.test.a",
+            &source,
+            0,
+            &mut WriteBudget::default(),
+        )
+        .unwrap();
         let response = request.join().unwrap().unwrap();
         assert_eq!(response["installed"].as_array().unwrap().len(), 1);
         assert!(!response.to_string().contains("io.test.b"));
@@ -706,5 +770,110 @@ mod tests {
         ]
         .map(str::to_owned);
         assert!(policy(&args, r#"{"keyboard_interactivity":1}"#, true).is_err());
+    }
+    #[test]
+    fn rolling_write_budget_does_not_block_reads() {
+        let mut budget = WriteBudget::default();
+        let start = Instant::now();
+        for _ in 0..5 {
+            budget.admit(&["save".into()], start).unwrap();
+        }
+        assert!(budget
+            .admit(&["save".into()], start + Duration::from_millis(999))
+            .is_err());
+        for _ in 0..100 {
+            budget.admit(&["list".into()], start).unwrap();
+        }
+        budget
+            .admit(&["edit-done".into()], start + Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(budget.0.len(), 1);
+    }
+    #[test]
+    fn refused_content_failure_can_retry_but_old_generation_cannot_stop_new_code() {
+        let base = env::temp_dir().join(format!("content-delivery-{}", nonce()));
+        fs::create_dir(&base).unwrap();
+        let r = Registry {
+            data: base.join("data"),
+            state: base.join("state"),
+        };
+        let src = base.join("source");
+        sdk::scaffold(&src, "io.review.recovery", "Recovery").unwrap();
+        r.install(&src).unwrap();
+        let id = r
+            .placement("io.review.recovery", "create", Some("small"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let source = r
+            .source(&r.layout().unwrap(), "io.review.recovery")
+            .unwrap();
+        let request = vec!["content-failed".into(), id];
+        let lock = r.lock().unwrap();
+        assert!(scoped(&r, "io.review.recovery", &source, 0, &request)
+            .unwrap_err()
+            .starts_with("Registry busy;"));
+        drop(lock);
+        assert!(scoped(
+            &r,
+            "io.review.recovery",
+            &source,
+            0,
+            &["control".into(), "arrange".into()]
+        )
+        .is_err());
+        scoped(&r, "io.review.recovery", &source, 0, &request).unwrap();
+        assert_eq!(
+            r.layout().unwrap()["runtime"]["packageControls"]["io.review.recovery"]["loadFailure"],
+            true
+        );
+        r.package_control("io.review.recovery", "enable").unwrap();
+        r.deploy(&src, true).unwrap();
+        let before = r.layout().unwrap();
+        assert!(scoped(&r, "io.review.recovery", &source, 0, &request).is_err());
+        assert_eq!(r.layout().unwrap(), before);
+        fs::remove_dir_all(base).unwrap();
+    }
+    #[test]
+    fn manager_writes_survive_repeated_broker_read_contention() {
+        let base = env::temp_dir().join(format!("broker-contention-{}", nonce()));
+        fs::create_dir(&base).unwrap();
+        let r = std::sync::Arc::new(Registry {
+            data: base.join("data"),
+            state: base.join("state"),
+        });
+        let src = base.join("source");
+        sdk::scaffold(&src, "io.review.contention", "Contention").unwrap();
+        r.install(&src).unwrap();
+        let id = r
+            .placement("io.review.contention", "create", Some("small"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let source = r
+            .source(&r.layout().unwrap(), "io.review.contention")
+            .unwrap();
+        let reader = r.clone();
+        let polling = std::thread::spawn(move || {
+            for _ in 0..500 {
+                let _ = scoped(
+                    &reader,
+                    "io.review.contention",
+                    &source,
+                    0,
+                    &["list".into()],
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        for n in 0..300 {
+            retry_busy(|| r.placement(&id, if n % 2 == 0 { "hide" } else { "show" }, None))
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        polling.join().unwrap();
+        fs::remove_dir_all(base).unwrap();
     }
 }

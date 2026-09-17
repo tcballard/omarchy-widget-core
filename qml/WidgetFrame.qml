@@ -6,6 +6,7 @@ import qs.Ui as Ui
 
 FocusScope {
     id: root
+    objectName:"widget-frame"
     property string title: ""
     property bool editing: false
     property string sizeName: "standard"
@@ -58,10 +59,18 @@ FocusScope {
         border.color:root.editing?(root.invalidTarget?Color.urgent:Color.accent):Qt.rgba(Color.foreground.r,Color.foreground.g,Color.foreground.b,root.number("borderAlpha",0.12,0,1))
         radius:root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,1000)
     }
+    Ui.Button {
+        objectName:"settings-gear"; z:10; text:"⚙"; visible:root.configurable
+        anchors.top:parent.top;anchors.right:parent.right
+        anchors.margins:Style.space(4)
+        width:Style.space(32);height:Style.space(32);horizontalPadding:0
+        focusable:true;Accessible.name:root.title+" settings"
+        onClicked:root.configureRequested()
+    }
     ColumnLayout {
         anchors.fill:parent;spacing:0
         Item {
-            visible:root.editing || root.configurable || root.appearance.showTitle === true
+            visible:root.editing || root.appearance.showTitle === true
             Layout.fillWidth:true;Layout.preferredHeight:visible?Style.space(42):0
             MouseArea {
                 id: drag;anchors.fill:parent;enabled:root.editing
@@ -73,10 +82,9 @@ FocusScope {
                 onCanceled:root.finishedMoving()
             }
             RowLayout {
-                anchors.fill:parent;anchors.leftMargin:Style.space(14);anchors.rightMargin:Style.space(7);spacing:Style.space(5)
+                anchors.fill:parent;anchors.leftMargin:Style.space(14);anchors.rightMargin:Style.space(root.configurable?42:7);spacing:Style.space(5)
                 Label { text:root.editing?"⠿  "+root.title:root.appearance.showTitle === true ? root.title : "";font.family:root.labelFamily;Layout.fillWidth:true }
-                Ui.Button { objectName:"settings-gear"; text:"⚙"; visible:root.configurable; focusable:true; Accessible.name:root.title+" settings"; onClicked:root.configureRequested() }
-                Ui.Button { visible:root.editing || root.appearance.showTitle === true; objectName:"edit-button";text:root.editing?"Done":"Arrange";fontSize:Style.font.bodySmall;focusable:true;onClicked:root.editRequested() }
+                Ui.Button { visible:root.editing; objectName:"edit-button";text:"Done";fontSize:Style.font.bodySmall;focusable:true;onClicked:root.editRequested() }
             }
         }
         Rectangle { visible:root.editing;Layout.fillWidth:true;Layout.preferredHeight:visible?1:0;color:Color.foreground;opacity:0.1 }
@@ -86,7 +94,7 @@ FocusScope {
             Ui.Button { text:"↗";tooltipText:root.monitorName;focusable:true;onClicked:root.monitorRequested() }
             Ui.Button { text:"Hide";focusable:true;onClicked:root.hideRequested() }
         }
-        Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Math.max(Style.space(root.number("padding",12,8,24)),Math.ceil(root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,1000)*0.3));clip:true}
+        Item {id:slot;objectName:"widget-content";Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Math.max(Style.space(root.number("padding",12,8,24)),Math.ceil(root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,1000)*0.3));clip:true}
         Label { visible:root.notice!=="";text:root.notice;color:Color.urgent;font.pixelSize:Style.font.bodySmall;Layout.fillWidth:true;Layout.margins:Style.space(10) }
     }
 }

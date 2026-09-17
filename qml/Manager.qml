@@ -10,6 +10,10 @@ FocusScope {
     property var retained: []
     property var monitors: []
     property string notice: ""
+    property var pendingEditor: null
+    property bool repairRequired: false
+    signal cancelEditorRequested(string instanceId,string serial)
+    signal repairRequested()
     property bool busy: false
     property string error: ""
     property string workspaceError: ""
@@ -65,6 +69,12 @@ FocusScope {
             Item { Layout.fillWidth: true }
         }
         Label { text: root.view === "available" ? "Choose a size to add a new widget with its default settings." : "Each widget has its own settings and desktop position."; color: Color.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
+        RowLayout {
+            visible:root.pendingEditor!==null;Layout.fillWidth:true
+            Label { text:root.pendingEditor ? "Settings pending for "+root.pendingEditor.instance : "";wrapMode:Text.Wrap;Layout.fillWidth:true }
+            Ui.Button { text:"Cancel pending settings";enabled:!root.busy;onClicked:root.cancelEditorRequested(root.pendingEditor.instance,String(root.pendingEditor.serial)) }
+        }
+        Ui.Button { text:"Repair saved layout";visible:root.repairRequired;enabled:!root.busy;onClicked:root.repairRequested() }
         ListView {
             id: available
             objectName: "available-list"
@@ -163,14 +173,14 @@ FocusScope {
                         font.pixelSize: Style.font.bodySmall; Layout.fillWidth: true; wrapMode: Text.Wrap
                     }
                     Flow {
-                        visible:instanceCard.available; Layout.fillWidth:true; spacing:Style.space(6)
+                        visible:instanceCard.available && instanceCard.modelData.placement.enabled && !instanceCard.modelData.effective; Layout.fillWidth:true; spacing:Style.space(6)
                         Repeater {
                             model:instanceCard.modelData.manifest.families || []
                             Ui.Button { required property string modelData; objectName:"resize-"+instanceCard.modelData.instanceId+"-"+modelData; text:modelData; selected:instanceCard.chosenSize===modelData; onClicked:instanceCard.chosenSize=modelData }
                         }
                     }
                     Flow {
-                        visible:instanceCard.available; Layout.fillWidth:true; spacing:Style.space(6)
+                        visible:instanceCard.available && instanceCard.modelData.placement.enabled && !instanceCard.modelData.effective; Layout.fillWidth:true; spacing:Style.space(6)
                         Ui.Button { text:"Automatic monitor"; selected:instanceCard.chosenMonitor===""; onClicked:instanceCard.chosenMonitor="" }
                         Repeater {
                             model:root.monitors
