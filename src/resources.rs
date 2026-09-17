@@ -47,10 +47,7 @@ pub fn preflight() -> Result<Value> {
     let unit = format!("omarchy-widget-island-check-{}.service", std::process::id());
     let mut args = service_args(&unit)?;
     // Preflight must not start or depend on an installed Core service.
-    args.retain(|s| {
-        !s.starts_with("--property=BindsTo=")
-            && !s.starts_with("--property=After=")
-    });
+    args.retain(|s| !s.starts_with("--property=BindsTo=") && !s.starts_with("--property=After="));
     let status = Command::new("/usr/bin/systemd-run")
         .args(args)
         .arg(env::current_exe().map_err(err)?)

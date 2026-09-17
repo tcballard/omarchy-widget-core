@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QUrl, QMetaObject
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtTest import QTest
@@ -29,7 +29,9 @@ Item {
     property bool revealRunner: false
     property var desktop: ({available:true,monitors:{"eDP-1":1}})
     property var monitor: ({name:"eDP-1"})
-    function screenFor(name) { return monitor; }
+    property bool monitorAvailable: true
+    function screenFor(name) { return monitorAvailable ? monitor : null; }
+    function clearPending() { pendingClose=null; }
     property bool managerRole: true
     property bool snapshotReady: false
     property bool managerOpen: false
@@ -64,9 +66,9 @@ Item {
     assert not obj.property('surfaceVisible')
     obj.setProperty('shown',True);QTest.qWait(10)
     assert obj.property('surfaceVisible')
-    obj.setProperty('monitor',None);QTest.qWait(10)
+    obj.setProperty('monitorAvailable',False);QTest.qWait(10)
     assert not obj.property('surfaceVisible')
-    obj.setProperty('monitor',{'name':'eDP-1'});QTest.qWait(10)
+    obj.setProperty('monitorAvailable',True);QTest.qWait(10)
     assert obj.property('surfaceVisible')
     QTest.qWait(300)
     assert obj.property('quitCount')==0, 'Must receive first snapshot before exiting'
@@ -77,7 +79,7 @@ Item {
         obj.setProperty(reason,False)
     obj.setProperty('pendingClose',{'instance':'clock'});QTest.qWait(300)
     assert obj.property('quitCount')==0
-    obj.setProperty('pendingClose',None);QTest.qWait(350)
+    QMetaObject.invokeMethod(obj,'clearPending');QTest.qWait(350)
     assert obj.property('quitCount')==1, 'Idle manager should release its process'
     assert not warnings, warnings
 print('PASS: visibility does not depend on mapped screen; manager waits for surfaces and queued actions before exit')

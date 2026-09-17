@@ -398,7 +398,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     }
                 };
                 if manager_required(&snapshot) {
-                    if manager.is_none() && manager_attempts < 3 && Instant::now() >= manager_retry {
+                    if manager.is_none() && manager_attempts < 3 && Instant::now() >= manager_retry
+                    {
                         manager_attempts += 1;
                         match Command::new("/usr/bin/qs")
                             .args(["--no-duplicate", "-p"])
