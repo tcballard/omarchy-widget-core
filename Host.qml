@@ -377,7 +377,6 @@ Item {
                 id: context
                 readonly property var settings: window.config.settings
                 active: window.visible
-                onSuspending: inputRequested=false
                 readonly property var weather: root.weatherStates[window.modelData] || ({state:"loading",data:null,error:""})
                 function requestWeather(latitude,longitude) {
                     return active && root.execute(["weather",window.modelData,String(latitude),String(longitude)]);
@@ -389,20 +388,15 @@ Item {
                 readonly property string packageId: window.metadata.id
                 readonly property string definitionId: "main"
                 readonly property string family: window.sizeName
-                readonly property string sizeName: window.metadata.coreApi===1 ? Grid.legacyName(window.sizeName) : window.sizeName
                 readonly property var appearance: Object.assign({}, root.themeAppearance, root.desktop.frame || {})
                 readonly property var saveState: root.saveStates[window.modelData] || ({saving:false,error:"",saved:false})
                 readonly property string saveError: saveState.error
                 readonly property bool saving: saveState.saving
                 readonly property bool saved: saveState.saved
                 readonly property int settingsRevision: window.config.revision
-                property int draftRevision: settingsRevision
-                property bool inputRequested: false
-                function requestInput(enabled) { inputRequested = enabled; if(enabled) draftRevision=settingsRevision; }
                 function requestConfigure() { root.configure(window.modelData); }
                 // API 3 actions use the revision observed when the action was prepared.
-                function saveSettings(value, revision) { return root.save(window.modelData,value,revision === undefined ? (window.metadata.coreApi===1 ? draftRevision : settingsRevision) : revision, true); }
-                onSettingsRevisionChanged: if(!inputRequested || saved) draftRevision=settingsRevision
+                function saveSettings(value, revision) { return root.save(window.modelData,value,revision === undefined ? settingsRevision : revision, true); }
             }
             Core.WidgetFrame {
                 anchors.fill: parent

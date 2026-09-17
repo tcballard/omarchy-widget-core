@@ -23,7 +23,7 @@ The root QML item declares `required property var widgetContext`. Core passes it
 - `appearance`: desktop-owned widget tokens; effective desktop border size and rounding take precedence.
 - `requestConfigure()`: opens Core's settings surface when an editor is declared.
 
-API 3 supports `saveSettings(object, expectedRevision)`, `saving`, `saved`, and `saveError` for display actions. Pass the settings revision observed when preparing the action; omission uses the current acknowledged revision. Legacy API 1 additionally uses `sizeName` and `requestInput(bool)`. `saveSettings` returning true means queued, not durably saved. Observe completion state. No concurrent save for the same instance is accepted. An action acknowledgement never closes an open settings draft. The draft retains its original revision; Save then reports a conflict if the action changed durable state. Cancel/reopen to load the action result. Timers should persist absolute deadlines; see `examples/countdown` for Start/Pause/Resume. The compatibility `qs.Commons` and `qs.Ui` modules belong to Core; they are not the shell's singletons and do not promise the full Quattro plugin API.
+API 3 supports `saveSettings(object, expectedRevision)`, `saving`, `saved`, and `saveError` for display actions. Pass the settings revision observed when preparing the action; omission uses the current acknowledged revision. `saveSettings` returning true means queued, not durably saved. Observe completion state. No concurrent save for the same instance is accepted. An action acknowledgement never closes an open settings draft. The draft retains its original revision; Save then reports a conflict if the action changed durable state. Cancel/reopen to load the action result. Timers should persist absolute deadlines; see `examples/countdown` for Start/Pause/Resume. The compatibility `qs.Commons` and `qs.Ui` modules belong to Core; they are not the shell's singletons and do not promise the full Quattro plugin API.
 
 ## Settings editor
 
@@ -135,7 +135,7 @@ remain in saved settings for compatibility but do not override the shared frame.
 Widget content can interpret its own settings within the frame.
 
 API 3 configurable widgets receive a Core-owned 32-unit corner settings gear, without a permanent header band. It is in the Qt Tab order. Normal surfaces request on-demand focus; the manager's Configure action remains the keyboard entry route. Actual Hyprland focus/accessibility is an outstanding acceptance gate.
-Do not add another gear in package content. API 1/2 retain their existing content controls.
+Do not add another gear in package content. API 2 retains its existing content controls. API 1 is unsupported.
 
 ### Delivery and recovery boundaries
 

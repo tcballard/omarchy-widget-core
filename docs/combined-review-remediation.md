@@ -19,14 +19,16 @@ and World Clock `e65a5fb`. This is development remediation, not desktop acceptan
 | N12 | Friendly export-file errors, percent-encoded editor paths, restore matching surviving identities atomically and report removed IDs skipped, correct Clock API 3 installer text. | Editor named Set#tings.qml loads; restore survivor/invalid input tests; Clock installer fixture. |
 | N14 | Default builds cannot enable reveal or grant leased overlay privileges. Keep prototype behind explicit experimental-reveal feature. | Default refusal and feature-enabled policy tests; CI runs actual proxy tests in both modes. |
 | N15 / N16 | Explicit separate application/service rationale, compatibility-bridge boundary and constrained grid promise. Retain the isolation and state/recovery responsibilities. | Documentation correction. Upstream/marketplace acceptance and supported Arch packaging are not claimed. |
+| API 1 scope recommendation | Remove API 1 manifest conversion, display-context facade and runtime size aliases. Reject API 1 at all package entry points and in preview tooling. API 3 is the author target. | Rust validation/install/update/load/rollback rejection tests; existing fixtures use supported APIs. Preview rejects API 1 before rendering. |
 
 ## Scope decisions
 
 Weather remains an independent bounded experimental service. A second provider
 should drive a generic provider design; no arbitrary renderer networking was
-added. Reveal and weather do not share a feature flag. API 1/2 remain migration
-support during v0.0.2; API 3 is the author target. Removing compatibility before a
-supported baseline remains a separate migration decision.
+added. Reveal and weather do not share a feature flag. API 1 support was removed
+at the owner's request while the project is local development. API 2 remains
+supported; API 3 is the author target. Registry-file recovery is independent of
+widget API support and does not load API 1 code.
 
 ## Verification boundaries
 

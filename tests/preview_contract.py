@@ -20,12 +20,11 @@ Item {
     required property var widgetContext
     readonly property string identity:widgetContext.instanceId+widgetContext.packageId+widgetContext.definitionId
     readonly property int api:widgetContext.api
-    readonly property int revision:widgetContext.settingsRevision+widgetContext.draftRevision
-    readonly property string family:widgetContext.family+widgetContext.sizeName
+    readonly property int revision:widgetContext.settingsRevision
+    readonly property string family:widgetContext.family
     readonly property bool active:widgetContext.active
     readonly property bool backgroundAllowed:widgetContext.backgroundAllowed
     readonly property string lifecycle:widgetContext.lifecycle
-    readonly property bool requested:widgetContext.inputRequested
     readonly property var theme:widgetContext.theme
     readonly property var metrics:widgetContext.metrics
     readonly property var appearance:widgetContext.appearance
@@ -40,12 +39,21 @@ Item {
     IpcHandler {target:"preview-inert"}
     Text {anchors.centerIn:parent;text:parent.family}
     Component.onCompleted: {
-        if(widgetContext.requestWeather(0,0)!==false || widgetContext.saveSettings({},0)!==false || widgetContext.requestInput(true)!==false) throw new Error("Preview allowed a side effect");
+        if(widgetContext.requestWeather(0,0)!==false || widgetContext.saveSettings({},0)!==false) throw new Error("Preview allowed a side effect");
         widgetContext.requestConfigure();
     }
 }'''.replace('SIDE_EFFECT', str(Path(tmp)/'unexpected-command')))
-    command = ['bash', str(root/'sdk/capture-package'), str(package), str(Path(tmp)/'previews')] if '--sandbox' in sys.argv else [sys.executable, str(root/'sdk/render_previews.py'), str(Path(tmp)/'previews'), '--package', str(package)]
-    subprocess.run(command, check=True)
+    def capture_command(output):
+        if '--sandbox' in sys.argv:
+            return ['bash', str(root/'sdk/capture-package'), str(package), str(output)]
+        return [sys.executable, str(root/'sdk/render_previews.py'), str(output), '--package', str(package)]
+    subprocess.run(capture_command(Path(tmp)/'previews'), check=True)
     assert not (Path(tmp)/'unexpected-command').exists()
     assert len(list((Path(tmp)/'previews').glob('*.png'))) == 3
-print('PASS: public identity/state/lifecycle preview API; inert process and IPC imports; no save/network/process side effects')
+    manifest = json.loads((package/'widget.json').read_text())
+    manifest.update(schemaVersion=1, coreApi=1)
+    (package/'widget.json').write_text(json.dumps(manifest))
+    rejected = subprocess.run(capture_command(Path(tmp)/'rejected'), text=True, capture_output=True)
+    assert rejected.returncode != 0 and 'API 1 has been removed' in rejected.stderr, rejected
+    assert not list((Path(tmp)/'rejected').glob('*.png'))
+print('PASS: public identity/state/lifecycle preview API; inert process and IPC imports; no save/network/process side effects; API 1 rejected')

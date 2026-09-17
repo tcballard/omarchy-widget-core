@@ -9,7 +9,7 @@ FocusScope {
     objectName:"widget-frame"
     property string title: ""
     property bool editing: false
-    property string sizeName: "standard"
+    property string sizeName: "medium"
     property string monitorName: ""
     property string notice: ""
     property real moveStepX: 192

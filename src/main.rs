@@ -54,12 +54,15 @@ fn read_json(path: &Path, limit: u64) -> Result<Value> {
     serde_json::from_slice(&data).map_err(err)
 }
 fn manifest(dir: &Path) -> Result<Value> {
-    let mut v = read_json(&dir.join("widget.json"), 16384)?;
+    let v = read_json(&dir.join("widget.json"), 16384)?;
+    if v["coreApi"] == 1 {
+        return Err("Widget API 1 has been removed; port this package to schemaVersion 2/coreApi 3 with small, medium and large families".into());
+    }
     if v["kind"] != "desktop-widget"
-        || !((v["schemaVersion"] == 1 && v["coreApi"] == 1)
-            || (v["schemaVersion"] == 2 && (v["coreApi"] == 2 || v["coreApi"] == 3)))
+        || v["schemaVersion"] != 2
+        || !(v["coreApi"] == 2 || v["coreApi"] == 3)
     {
-        return Err("Requires desktop-widget schema 1/API 1 or schema 2/API 2–3; upgrade Core for newer APIs".into());
+        return Err("Requires desktop-widget schema 2/API 2–3; upgrade Core for newer APIs".into());
     }
     if !id_ok(v["id"].as_str().unwrap_or(""))
         || !v["name"]
@@ -88,45 +91,21 @@ fn manifest(dir: &Path) -> Result<Value> {
     if !v["defaults"].is_object() || serde_json::to_vec(&v["defaults"]).map_err(err)?.len() > 8192 {
         return Err("Defaults must be an object up to 8 KiB".into());
     }
-    // API 1 remains loadable, but geometry is always owned by Core.
-    let families: Vec<String> = if v["coreApi"] == 1 {
-        let sizes = v["sizes"].as_object().ok_or("Missing legacy sizes")?;
-        if sizes.is_empty()
-            || sizes.len() > 3
-            || !sizes.contains_key(v["defaultSize"].as_str().unwrap_or(""))
-        {
-            return Err("Invalid legacy sizes".into());
-        }
-        sizes
-            .keys()
-            .map(|k| family(k).map(str::to_owned))
-            .collect::<Result<_>>()?
-    } else {
-        let values = v["families"].as_array().ok_or("Missing families")?;
-        if values.is_empty() || values.len() > 3 {
-            return Err("Declare 1–3 families".into());
-        }
-        let mut result = Vec::new();
-        for value in values {
-            let name = value.as_str().ok_or("Invalid family")?;
-            if !["small", "medium", "large"].contains(&name) || result.contains(&name.to_string()) {
-                return Err("Families must be unique: small, medium, large".into());
-            }
-            result.push(name.to_string());
-        }
-        if !result.iter().any(|x| v["defaultFamily"] == x.as_str()) {
-            return Err("Invalid defaultFamily".into());
-        }
-        result
-    };
-    let default = if v["coreApi"] == 1 {
-        family(v["defaultSize"].as_str().unwrap_or(""))?
-    } else {
-        v["defaultFamily"].as_str().unwrap()
+    let values = v["families"].as_array().ok_or("Missing families")?;
+    if values.is_empty() || values.len() > 3 {
+        return Err("Declare 1–3 families".into());
     }
-    .to_string();
-    v["families"] = json!(families);
-    v["defaultFamily"] = json!(default);
+    let mut families = Vec::new();
+    for value in values {
+        let name = value.as_str().ok_or("Invalid family")?;
+        if family(name).is_err() || families.contains(&name) {
+            return Err("Families must be unique: small, medium, large".into());
+        }
+        families.push(name);
+    }
+    if !families.iter().any(|name| v["defaultFamily"] == *name) {
+        return Err("Invalid defaultFamily".into());
+    }
     if let Some(editor) = v["settingsEntryPoint"].as_str() {
         if !safe_relative(editor)
             || !editor.ends_with(".qml")
@@ -144,7 +123,7 @@ fn manifest(dir: &Path) -> Result<Value> {
             .as_object()
             .ok_or("Previews must be a family-to-PNG object")?
         {
-            if !families.contains(size) {
+            if !families.contains(&size.as_str()) {
                 return Err("Preview family is not supported".into());
             }
             let path = path.as_str().ok_or("Preview path must be a string")?;
@@ -259,9 +238,7 @@ fn validate(dir: &Path) -> Result<Value> {
 }
 fn family(name: &str) -> Result<&str> {
     match name {
-        "small" | "compact" => Ok("small"),
-        "medium" | "standard" => Ok("medium"),
-        "large" | "wide" => Ok("large"),
+        "small" | "medium" | "large" => Ok(name),
         _ => Err("Unknown widget family".into()),
     }
 }
@@ -448,12 +425,19 @@ impl Registry {
             {
                 return Err("Invalid placement; layout preserved".into());
             }
-            p["size"] = json!(family(p["size"].as_str().unwrap())?);
             if legacy {
+                // Registry recovery is independent of the removed widget API.
+                p["size"] = json!(match p["size"].as_str().unwrap() {
+                    "compact" => "small",
+                    "standard" => "medium",
+                    "wide" => "large",
+                    name => name,
+                });
                 p["packageId"] = json!(id);
                 p["definitionId"] = json!("main");
                 p["revision"] = json!(0);
             }
+            family(p["size"].as_str().unwrap())?;
             if !id_ok(p["packageId"].as_str().unwrap_or(""))
                 || p["definitionId"] != "main"
                 || p["revision"].as_u64().is_none()
@@ -1557,7 +1541,114 @@ mod tests {
     fn fixture(p: &Path) {
         fs::create_dir_all(p).unwrap();
         fs::write(p.join("View.qml"), "import QtQuick\nItem {}\n").unwrap();
-        fs::write(p.join("widget.json"),json!({"schemaVersion":1,"kind":"desktop-widget","coreApi":1,"id":"io.example.test","name":"Contract fixture","version":"0.1.0","entryPoint":"View.qml","defaultSize":"standard","sizes":{"standard":{"width":300,"height":200}},"defaults":{}}).to_string()).unwrap();
+        fs::write(p.join("widget.json"),json!({"schemaVersion":2,"kind":"desktop-widget","coreApi":3,"id":"io.example.test","name":"Contract fixture","version":"0.1.0","entryPoint":"View.qml","families":["medium"],"defaultFamily":"medium","defaults":{}}).to_string()).unwrap();
+    }
+    fn api_one_manifest(p: &Path) -> Value {
+        let mut m = read_json(&p.join("widget.json"), 16384).unwrap();
+        m["schemaVersion"] = json!(1);
+        m["coreApi"] = json!(1);
+        m["sizes"] = json!({"standard":{"width":300,"height":200}});
+        m["defaultSize"] = json!("standard");
+        m.as_object_mut().unwrap().remove("families");
+        m.as_object_mut().unwrap().remove("defaultFamily");
+        m
+    }
+    #[test]
+    fn api_one_rejected_by_validate_install_and_update_without_registry_changes() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let current = manifest(&src).unwrap();
+        let mut old = api_one_manifest(&src);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        for schema in [1, 2] {
+            old["schemaVersion"] = json!(schema);
+            atomic_json(&src.join("widget.json"), &old).unwrap();
+            assert!(validate(&src)
+                .unwrap_err()
+                .contains("API 1 has been removed"));
+            assert!(r
+                .install(&src)
+                .unwrap_err()
+                .contains("API 1 has been removed"));
+            assert!(!r.state.join("layout.json").exists());
+            assert!(!r.data.join("versions").exists());
+        }
+        atomic_json(&src.join("widget.json"), &current).unwrap();
+        r.install(&src).unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        atomic_json(&src.join("widget.json"), &old).unwrap();
+        assert!(r
+            .deploy(&src, true)
+            .unwrap_err()
+            .contains("API 1 has been removed"));
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        assert_eq!(
+            r.snapshot().unwrap()["catalog"][0]["manifest"]["coreApi"],
+            3
+        );
+    }
+    #[test]
+    fn already_installed_api_one_is_not_loaded_and_rollback_cannot_restore_it() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        r.placement(
+            "io.example.test",
+            "configure",
+            Some(r#"{"label":"Keep me"}"#),
+        )
+        .unwrap();
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        let old_path = r.source(&r.layout().unwrap(), "io.example.test").unwrap();
+        atomic_json(&old_path.join("widget.json"), &api_one_manifest(&old_path)).unwrap();
+        let snapshot = r.snapshot().unwrap();
+        assert!(snapshot["installed"].as_array().unwrap().is_empty());
+        assert!(snapshot["catalog"][0]["problem"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid package"));
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
+        r.deploy(&t.0.join("source"), true).unwrap();
+        let before_rollback = fs::read(r.state.join("layout.json")).unwrap();
+        assert!(r
+            .rollback("io.example.test")
+            .unwrap_err()
+            .contains("API 1 has been removed"));
+        assert_eq!(
+            fs::read(r.state.join("layout.json")).unwrap(),
+            before_rollback
+        );
+        assert_eq!(
+            r.snapshot().unwrap()["installed"][0]["manifest"]["coreApi"],
+            3
+        );
+        assert_eq!(
+            r.layout().unwrap()["placements"]["io.example.test"]["settings"]["label"],
+            "Keep me"
+        );
+    }
+    #[test]
+    fn placement_commands_reject_api_one_size_aliases() {
+        let t = Temp::new();
+        let r = review_registry(&t);
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        for size in ["compact", "standard", "wide"] {
+            let value = json!({"column":0,"row":0,"monitor":"DP-1","size":size}).to_string();
+            for operation in ["place", "recover-placement"] {
+                assert!(r
+                    .placement_using(
+                        "io.example.test",
+                        operation,
+                        Some(&value),
+                        grid::tests::desktop
+                    )
+                    .is_err());
+            }
+        }
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
     }
     #[test]
     fn deleted_instances_reject_every_stale_mutation_without_writes() {

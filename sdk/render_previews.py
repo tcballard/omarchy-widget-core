@@ -11,6 +11,8 @@ from PySide6.QtQml import QQmlApplicationEngine
 root=Path(__file__).resolve().parents[1]
 package=Path(sys.argv[3]).resolve() if len(sys.argv)==4 and sys.argv[2]=='--package' else root/'sdk/starter'
 manifest=json.loads((package/'widget.json').read_text())
+if manifest.get('schemaVersion')!=2 or manifest.get('coreApi') not in (2,3):
+    raise SystemExit('Preview requires schemaVersion 2/coreApi 2 or 3; widget API 1 has been removed.')
 entry=(package/manifest['entryPoint']).resolve();assert entry.is_relative_to(package.resolve())
 output=Path(sys.argv[1]).resolve();output.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory() as tmp:
@@ -28,13 +30,9 @@ Window {
         readonly property string instanceId:"preview-instance"
         readonly property string packageId:PACKAGE_ID
         readonly property string definitionId:"main"
-        readonly property string sizeName:window.family
-        readonly property int draftRevision:settingsRevision
-        readonly property bool inputRequested:false
         readonly property var weather:({state:"unavailable",data:null,error:"Preview has no network access"})
         readonly property var saveState:({saving:false,saved:false,error:""})
         function requestWeather(latitude,longitude) { return false; }
-        function requestInput(enabled) { return false; }
         readonly property var theme:Color
         readonly property var metrics:Style
         readonly property var settings:DEFAULTS

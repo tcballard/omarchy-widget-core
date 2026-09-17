@@ -17,4 +17,3 @@ function valid(t,g,blockers) {
             && t.row<b.row+b.rows && b.row<t.row+t.rows;
     });
 }
-function legacyName(name) { return {small:"compact",medium:"standard",large:"wide"}[name] || "standard"; }

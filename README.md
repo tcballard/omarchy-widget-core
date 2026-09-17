@@ -59,7 +59,7 @@ This is a development fixture, not a new product widget.
 
 Core inherits global desktop gaps. Arrange shows cell outlines; drag or use arrow keys to move one cell, and cycle only the sizes the widget supports. Explicit moves and resizes reject collisions without pushing other widgets. Theme scale affects content rather than the cell grid.
 
-API 1 packages remain loadable through a compatibility facade, but their arbitrary dimensions become fixed families: compact → small, standard → medium, wide → large. World Clock’s two stacked PRs supply the family layouts and shared settings-editor contract; Core CI pins that implementation for integration testing.
+API 1 support has been removed. Packages must use manifest schema 2 and Core API 2 or 3; new widgets target API 3. Core accepts only the small, medium and large families. World Clock uses API 3, and Core CI pins its implementation for integration testing. See [compatibility](docs/compatibility.md) for porting older development packages.
 
 ## State and recovery
 
