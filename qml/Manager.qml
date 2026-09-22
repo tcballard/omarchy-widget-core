@@ -77,7 +77,7 @@ FocusScope {
         spacing: Style.space(12)
         RowLayout {
             Layout.fillWidth: true
-            Label { text: "Desktop widgets"; font.pixelSize: Style.font.heading; font.bold: true; Layout.fillWidth: true }
+            Label { text: "Widget Library"; font.pixelSize: Style.font.heading; font.bold: true; Layout.fillWidth: true }
             Ui.Button { text: "Done"; onClicked: root.closeRequested() }
         }
         Label { text: "Choose a widget, then add it to your desktop."; color: Color.muted; Layout.fillWidth: true }
@@ -144,7 +144,7 @@ FocusScope {
             Rectangle { Layout.fillHeight: true; width: 1; color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.12) }
             ColumnLayout {
                 Layout.fillWidth: true; Layout.fillHeight: true; spacing: Style.space(12)
-                Label { text: root.selectedEntry ? root.selectedEntry.manifest.name : (root.search ? "No matching widgets" : "No widgets installed"); font.bold: true; font.pixelSize: Style.font.title; Layout.fillWidth: true }
+                Label { text: root.selectedEntry ? root.selectedEntry.manifest.name : (root.search ? "No matching widgets" : "No widgets installed"); font.bold: true; font.pixelSize: Style.font.heading; Layout.fillWidth: true }
                 Label { text: root.selectedEntry ? "See available sizes, add an instance, or manage one already on your desktop." : (root.search ? "Try a different search." : "Install a widget package to get started."); color: Color.muted; wrapMode: Text.Wrap; Layout.fillWidth: true }
                 Flickable {
                     Layout.fillWidth: true; Layout.fillHeight: true; clip: true
