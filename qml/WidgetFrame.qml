@@ -83,7 +83,7 @@ FocusScope {
             visible:root.editing;Layout.fillWidth:true;Layout.margins:Style.space(4);spacing:0
             Ui.Button { text:root.sizeName;focusable:true;onClicked:root.sizeRequested();Layout.fillWidth:true }
             Ui.Button { text:"↗";tooltipText:root.monitorName;focusable:true;onClicked:root.monitorRequested() }
-            Ui.Button { text:"Hide";focusable:true;onClicked:root.hideRequested() }
+            Ui.Button { text:"Remove from desktop";focusable:true;onClicked:root.hideRequested() }
         }
         Item {id:slot;Layout.fillWidth:true;Layout.fillHeight:true;Layout.margins:Math.max(Style.space(root.number("padding",12,8,24)),Math.ceil(root.number("radius",Math.max(Style.cornerRadius,Style.space(12)),0,1000)*0.3));clip:true}
         Label { visible:root.notice!=="";text:root.notice;color:Color.urgent;font.pixelSize:Style.font.bodySmall;Layout.fillWidth:true;Layout.margins:Style.space(10) }
