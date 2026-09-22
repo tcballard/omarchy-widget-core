@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import qs.Commons
 import qs.Ui as Ui
 
@@ -11,6 +12,9 @@ FocusScope {
     property string workspaceError: ""
     property string search: ""
     property string selectedId: ""
+    property string selectedSize: ""
+    property string installPath: ""
+    property bool installOpen: false
     readonly property var selectedEntry: entryFor(selectedId)
     readonly property var packages: packageEntries()
     readonly property var visiblePackages: packages.filter(function(item) {
@@ -22,6 +26,8 @@ FocusScope {
     signal refreshRequested()
     signal arrangeRequested()
     signal toggleRequested(string id, bool enabled)
+    signal addRequested(string id, string size)
+    signal installRequested(string path)
     focus: true
     Keys.onEscapePressed: closeRequested()
 
@@ -47,6 +53,15 @@ FocusScope {
     }
     onEntriesChanged: {
         if (!entryFor(selectedId)) selectedId = entries.length ? entries[0].instanceId : "";
+    }
+    onSelectedIdChanged: selectedSize = selectedEntry ? (selectedEntry.manifest.defaultFamily || "medium") : ""
+    FolderDialog {
+        id: packageFolder
+        title: "Choose a widget package folder"
+        onAccepted: {
+            root.installPath = decodeURIComponent(selectedFolder.toString().replace(/^file:\/\//, ""));
+            root.installOpen = true;
+        }
     }
 
     Rectangle {
@@ -88,6 +103,15 @@ FocusScope {
                     Label { anchors.verticalCenter: parent.verticalCenter; anchors.left: parent.left; anchors.leftMargin: Style.space(9); text: "Search widgets"; color: Color.muted; visible: !searchInput.text && !searchInput.activeFocus }
                 }
                 Label { text: "INSTALLED"; color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.topMargin: Style.space(8) }
+                Ui.Button { text: "Install widget…"; Layout.fillWidth: true; onClicked: { root.installOpen = true; packageFolder.open(); } }
+                ColumnLayout {
+                    Layout.fillWidth: true; visible: root.installOpen; spacing: Style.space(6)
+                    Label { text: "Package folder"; color: Color.muted; font.pixelSize: Style.font.bodySmall }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: Style.space(34); radius: Style.space(7); color: Qt.rgba(Color.foreground.r, Color.foreground.g, Color.foreground.b, 0.06)
+                        TextInput { anchors.fill: parent; anchors.margins: Style.space(7); text: root.installPath; onTextEdited: root.installPath = text; activeFocusOnTab: true; selectByMouse: true; clip: true; color: Color.foreground; font.family: Style.font.family; font.pixelSize: Style.font.bodySmall; Accessible.name: "Widget package folder path" }
+                    }
+                    Ui.Button { text: "Install package"; enabled: !root.busy && root.installPath.length > 0; onClicked: root.installRequested(root.installPath) }
+                }
                 ListView {
                     id: categories
                     Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: Style.space(3)
@@ -140,8 +164,15 @@ FocusScope {
                                     height: large ? Style.space(148) : Style.space(112)
                                     radius: Style.space(12)
                                     color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.13)
-                                    border.color: Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.38)
-                                    border.width: 1
+                                    border.color: root.selectedSize === modelData ? Color.accent : Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, 0.38)
+                                    border.width: root.selectedSize === modelData ? 2 : 1
+                                    activeFocusOnTab: true
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: "Select " + modelData + " size"
+                                    Accessible.onPressAction: root.selectedSize = modelData
+                                    Keys.onReturnPressed: root.selectedSize = modelData
+                                    Keys.onSpacePressed: root.selectedSize = modelData
+                                    MouseArea { anchors.fill: parent; onClicked: { root.selectedSize = modelData; parent.forceActiveFocus(); } }
                                     Column {
                                         anchors.centerIn: parent; spacing: Style.space(7)
                                         Label { anchors.horizontalCenter: parent.horizontalCenter; text: root.selectedEntry ? root.selectedEntry.manifest.name : ""; font.bold: true; font.pixelSize: Style.font.bodySmall }
@@ -150,8 +181,8 @@ FocusScope {
                                 }
                             }
                         }
-                        Ui.Button { text: "Add widget"; enabled: !root.busy; visible: !!root.selectedEntry; onClicked: root.toggleRequested(root.selectedEntry.manifest.id, true) }
-                        Label { text: "Sizes shown here are illustrative. Choose the size on the desktop after adding."; color: Color.muted; font.pixelSize: Style.font.bodySmall; wrapMode: Text.Wrap; Layout.fillWidth: true; visible: !!root.selectedEntry }
+                        Ui.Button { text: "Add to desktop"; enabled: !root.busy && !!root.selectedSize; visible: !!root.selectedEntry; onClicked: root.addRequested(root.selectedEntry.manifest.id, root.selectedSize) }
+                        Label { text: "Content previews are coming; these cards show each available size."; color: Color.muted; font.pixelSize: Style.font.bodySmall; wrapMode: Text.Wrap; Layout.fillWidth: true; visible: !!root.selectedEntry }
                         Label { text: "ON YOUR DESKTOP"; color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.topMargin: Style.space(9); visible: !!root.selectedEntry }
                         Repeater {
                             model: root.selectedEntry ? root.entries.filter(function(item) { return item.manifest.id === root.selectedEntry.manifest.id && item.placement && item.placement.enabled; }) : []
@@ -171,7 +202,7 @@ FocusScope {
                                 }
                                 Ui.Button { text: "Set"; enabled: workspace.acceptableInput && !root.busy; onClicked: root.workspaceRequested(modelData.instanceId, workspace.text) }
                                 Ui.Button { text: "Settings"; visible: !!modelData.manifest.settingsEntryPoint; onClicked: root.configureRequested(modelData.instanceId) }
-                                Ui.Button { text: "Remove"; enabled: !root.busy; onClicked: root.toggleRequested(modelData.instanceId, false) }
+                                Ui.Button { text: "Remove from desktop"; enabled: !root.busy; onClicked: root.toggleRequested(modelData.instanceId, false) }
                             }
                         }
                         Label { text: "No room at the current placement. Arrange widgets to choose another spot."; visible: !!root.selectedEntry && !!root.selectedEntry.placement && root.selectedEntry.placement.enabled && !root.selectedEntry.effective; color: Color.urgent; wrapMode: Text.Wrap; Layout.fillWidth: true }
