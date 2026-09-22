@@ -31,6 +31,10 @@ The optional editor declares `required property var settingsContext`. It renders
 
 Cancel discards the draft. Save sends `{revision,settings}`. A stale revision fails without overwriting durable settings. Core retains the failed draft; cancel/reopen to load newer settings. Widget-specific field validation remains the widget author's responsibility; Core enforces object and byte limits.
 
+## Widget Library previews
+
+A package can include a captured PNG for each supported family using optional `previews`, for example `{"small":"previews/small.png","medium":"previews/medium.png"}`. These are actual captures of the widget at the declared size, supplied with the package. Core validates relative paths, package containment, PNG header and dimensions (1–1024 pixels), and a 512 KiB per-image limit. The manager displays these images without executing package QML. If a family has no image, the library displays its name and footprint instead. Previews are snapshots with default/example data, not live user data. Package authors should update captures when the widget's visible design changes; live XPS validation remains separate.
+
 ## Registry commands
 
 The Rust helper prints one JSON response and exits nonzero on failure. `list` returns API 2, registry revision, palette, appearance, installed entries and problems. Each entry includes manifest, immutable code directory, identity and placement. Each write response includes the committed placement and registry revision where applicable.
