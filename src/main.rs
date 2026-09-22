@@ -135,6 +135,41 @@ fn manifest(dir: &Path) -> Result<Value> {
             return Err("Invalid settingsEntryPoint".into());
         }
     }
+    if let Some(previews) = v.get("previews") {
+        for (size, path) in previews
+            .as_object()
+            .ok_or("Previews must map widget families to PNG paths")?
+        {
+            if !v["families"].as_array().is_some_and(|values| values.contains(&json!(size))) {
+                return Err("Preview family is not supported".into());
+            }
+            let path = path.as_str().ok_or("Preview path must be a string")?;
+            if !safe_relative(path) || !path.ends_with(".png") {
+                return Err("Preview must be a relative PNG path".into());
+            }
+            let file = dir.join(path);
+            let meta = fs::symlink_metadata(&file).map_err(err)?;
+            if !meta.is_file()
+                || meta.len() > 512 * 1024
+                || !file.canonicalize().map_err(err)?.starts_with(&canonical)
+            {
+                return Err("Preview must be a bounded package PNG".into());
+            }
+            let mut header = [0; 24];
+            File::open(file)
+                .map_err(err)?
+                .read_exact(&mut header)
+                .map_err(err)?;
+            if &header[..8] != b"\x89PNG\r\n\x1a\n"
+                || &header[12..16] != b"IHDR"
+                || ![16, 20].iter().all(|i| {
+                    (1..=1024).contains(&u32::from_be_bytes(header[*i..*i + 4].try_into().unwrap()))
+                })
+            {
+                return Err("Preview must be a PNG with dimensions from 1 to 1024".into());
+            }
+        }
+    }
     Ok(v)
 }
 fn walk(dir: &Path, relative: &Path, out: &mut Vec<PathBuf>, bytes: &mut u64) -> Result<()> {
