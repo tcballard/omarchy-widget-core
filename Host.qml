@@ -36,6 +36,10 @@ Item {
         return accepted;
     }
     function refresh() { return execute(["list"]); }
+    function addWidget(packageId, size) {
+        var existing = installed.filter(function(item) { return item.manifest.id === packageId && item.placement && item.placement.enabled; });
+        return execute(existing.length ? ["duplicate", existing[0].instanceId, size] : ["add", packageId, size]);
+    }
     function control(method) { return execute(["control",method]); }
     function save(id, value, revision) {
         if (saveStates[id] && saveStates[id].saving) return false;
@@ -133,7 +137,9 @@ Item {
             onConfigureRequested: function(id) { root.control("close-manager");root.managerOpen=false;root.configure(id); }
             onCloseRequested: { root.managerOpen=false;root.control("close-manager"); }
             onRefreshRequested: root.refresh()
-            onToggleRequested: function(id, enabled) { root.execute([enabled ? "add" : "hide", id]); }
+            onToggleRequested: function(id, enabled) { if(enabled) root.addWidget(id, "medium"); else root.execute(["hide", id]); }
+            onAddRequested: function(id, size) { root.addWidget(id, size); }
+            onInstallRequested: function(path) { root.execute(["install", path]); }
             onArrangeRequested: { root.control("arrange"); root.shown = true; root.managerOpen = false;root.control("close-manager"); }
         }
     }
