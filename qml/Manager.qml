@@ -158,7 +158,7 @@ FocusScope {
                             delegate: RowLayout {
                                 required property var modelData
                                 Layout.fillWidth: true; spacing: Style.space(8)
-                                Label { text: (modelData.placement.size || "medium") + " · " + (modelData.placement.workspace ? "Workspace " + modelData.placement.workspace : "All workspaces"); Layout.fillWidth: true; elide: Text.ElideRight }
+                                Label { text: (modelData.placement.size || "medium") + " · " + (modelData.placement.workspace && modelData.placement.workspace !== "all" ? "Workspace " + modelData.placement.workspace : "All workspaces"); Layout.fillWidth: true; elide: Text.ElideRight }
                                 TextInput {
                                     id: workspace; objectName: "workspace-input"
                                     Layout.preferredWidth: Style.space(44)
