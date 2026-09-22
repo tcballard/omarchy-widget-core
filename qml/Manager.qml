@@ -45,6 +45,11 @@ FocusScope {
             if (entries[i].instanceId === id) return entries[i];
         return null;
     }
+    function previewUrl(item, family) {
+        if (!item || !item.manifest.previews || !item.manifest.previews[family]) return "";
+        var segments = item.directory.split("/").concat(item.manifest.previews[family].split("/"));
+        return "file://" + segments.map(encodeURIComponent).join("/");
+    }
     function countFor(id) {
         var count = 0;
         for (var i = 0; i < entries.length; i++)
@@ -173,8 +178,18 @@ FocusScope {
                                     Keys.onReturnPressed: root.selectedSize = modelData
                                     Keys.onSpacePressed: root.selectedSize = modelData
                                     MouseArea { anchors.fill: parent; onClicked: { root.selectedSize = modelData; parent.forceActiveFocus(); } }
+                                    Image {
+                                        id: widgetImage
+                                        anchors.fill: parent; anchors.margins: Style.space(6)
+                                        source: root.previewUrl(root.selectedEntry, modelData)
+                                        sourceSize.width: 512; sourceSize.height: 512
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                        visible: status === Image.Ready
+                                    }
                                     Column {
                                         anchors.centerIn: parent; spacing: Style.space(7)
+                                        visible: widgetImage.status !== Image.Ready
                                         Label { anchors.horizontalCenter: parent.horizontalCenter; text: root.selectedEntry ? root.selectedEntry.manifest.name : ""; font.bold: true; font.pixelSize: Style.font.bodySmall }
                                         Label { anchors.horizontalCenter: parent.horizontalCenter; text: modelData.charAt(0).toUpperCase() + modelData.slice(1); color: Color.muted; font.pixelSize: Style.font.bodySmall }
                                     }
@@ -182,7 +197,7 @@ FocusScope {
                             }
                         }
                         Ui.Button { text: "Add to desktop"; enabled: !root.busy && !!root.selectedSize; visible: !!root.selectedEntry; onClicked: root.addRequested(root.selectedEntry.manifest.id, root.selectedSize) }
-                        Label { text: "Content previews are coming; these cards show each available size."; color: Color.muted; font.pixelSize: Style.font.bodySmall; wrapMode: Text.Wrap; Layout.fillWidth: true; visible: !!root.selectedEntry }
+                        Label { text: "Widget previews are supplied by their packages. A named size means no image is available yet."; color: Color.muted; font.pixelSize: Style.font.bodySmall; wrapMode: Text.Wrap; Layout.fillWidth: true; visible: !!root.selectedEntry }
                         Label { text: "ON YOUR DESKTOP"; color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.topMargin: Style.space(9); visible: !!root.selectedEntry }
                         Repeater {
                             model: root.selectedEntry ? root.entries.filter(function(item) { return item.manifest.id === root.selectedEntry.manifest.id && item.placement && item.placement.enabled; }) : []
