@@ -47,7 +47,7 @@ for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE'
         else:
             assert result.returncode==0,result.stderr
             assert (destination/'Host.qml').is_file()
-            assert 'Name=Widgets\n' in desktop.read_text()
+            assert 'Name=Widget Library\n' in desktop.read_text()
             assert 'Exec=omarchy-widget manage\n' in desktop.read_text()
             assert (destination/'Commons/Color.qml').is_file()
             assert 'KillMode=control-group' in unit.read_text()
