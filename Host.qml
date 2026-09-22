@@ -116,8 +116,8 @@ Item {
     }
     PanelWindow {
         visible: root.managerOpen
-        implicitWidth: Style.space(540)
-        implicitHeight: Style.space(500)
+        implicitWidth: Style.space(820)
+        implicitHeight: Style.space(580)
         color: "transparent"
         exclusionMode: ExclusionMode.Normal
         WlrLayershell.namespace: "tcballard-widget-manager"
