@@ -625,7 +625,9 @@ impl Registry {
                     }
                     p["size"] = json!(size);
                     // A new instance needs a slot sized for its selected family.
-                    if operation == "duplicate" { p["monitor"] = json!(""); }
+                    if operation == "duplicate" {
+                        p["monitor"] = json!("");
+                    }
                 }
                 if p["enabled"] != true || operation == "duplicate" {
                     p["activationOrder"] = json!(activation_order);
@@ -1142,12 +1144,33 @@ mod tests {
                 Some(r#"{"x":0,"y":0,"monitor":"","size":"small"}"#)
             )
             .is_err());
-        let added = r.placement_using("io.example.test", "add", Some("medium"), grid::tests::desktop).unwrap();
+        let added = r
+            .placement_using(
+                "io.example.test",
+                "add",
+                Some("medium"),
+                grid::tests::desktop,
+            )
+            .unwrap();
         assert_eq!(added["placement"]["size"], "medium");
-        let duplicate = r.placement_using("io.example.test", "duplicate", Some("large"), grid::tests::desktop).unwrap();
+        let duplicate = r
+            .placement_using(
+                "io.example.test",
+                "duplicate",
+                Some("large"),
+                grid::tests::desktop,
+            )
+            .unwrap();
         assert_eq!(duplicate["placement"]["size"], "large");
         let before = fs::read(r.state.join("layout.json")).unwrap();
-        assert!(r.placement_using("io.example.test", "duplicate", Some("small"), grid::tests::desktop).is_err());
+        assert!(r
+            .placement_using(
+                "io.example.test",
+                "duplicate",
+                Some("small"),
+                grid::tests::desktop
+            )
+            .is_err());
         assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
         m["families"] = json!(["medium", "medium"]);
         fs::write(src.join("widget.json"), m.to_string()).unwrap();
