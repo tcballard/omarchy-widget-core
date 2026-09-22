@@ -618,6 +618,15 @@ impl Registry {
         }
         match operation {
             "add" | "duplicate" => {
+                if let Some(requested) = value {
+                    let size = family(requested)?;
+                    if !m["families"].as_array().unwrap().contains(&json!(size)) {
+                        return Err("Unsupported widget family".into());
+                    }
+                    p["size"] = json!(size);
+                    // A new instance needs a slot sized for its selected family.
+                    if operation == "duplicate" { p["monitor"] = json!(""); }
+                }
                 if p["enabled"] != true || operation == "duplicate" {
                     p["activationOrder"] = json!(activation_order);
                 }
@@ -775,7 +784,7 @@ fn run(args: &[String]) -> Result<Value> {
 
     if cmd == "help" {
         return Ok(
-            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","duplicate INSTANCE_ID","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID [small|medium|large]","duplicate INSTANCE_ID [small|medium|large]","hide INSTANCE_ID","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
@@ -785,7 +794,7 @@ fn run(args: &[String]) -> Result<Value> {
         "place" | "configure" | "save" | "workspace" => 3,
         _ => return Err("Unknown command".into()),
     };
-    if args.len() != required {
+    if args.len() != required && !((cmd == "add" || cmd == "duplicate") && args.len() == 3) {
         return Err("Wrong argument count; use help".into());
     }
     if cmd == "validate" {
@@ -1133,6 +1142,13 @@ mod tests {
                 Some(r#"{"x":0,"y":0,"monitor":"","size":"small"}"#)
             )
             .is_err());
+        let added = r.placement_using("io.example.test", "add", Some("medium"), grid::tests::desktop).unwrap();
+        assert_eq!(added["placement"]["size"], "medium");
+        let duplicate = r.placement_using("io.example.test", "duplicate", Some("large"), grid::tests::desktop).unwrap();
+        assert_eq!(duplicate["placement"]["size"], "large");
+        let before = fs::read(r.state.join("layout.json")).unwrap();
+        assert!(r.placement_using("io.example.test", "duplicate", Some("small"), grid::tests::desktop).is_err());
+        assert_eq!(fs::read(r.state.join("layout.json")).unwrap(), before);
         m["families"] = json!(["medium", "medium"]);
         fs::write(src.join("widget.json"), m.to_string()).unwrap();
         assert!(validate(&src).is_err());
