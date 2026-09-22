@@ -84,7 +84,7 @@ See the [widget contract](docs/widget-contract.md), [appearance contract](docs/w
 
 ## Manager shortcut and workspace assignment (development)
 
-**Super+Space → Widgets** opens the manager through the application launcher. The installer adds a `Widgets` desktop entry.
+**Super+Space → Widget Library** opens the manager through the application launcher. The installer adds a `Widget Library` desktop entry.
 
 The installer attempts to add **Super+Alt+W → Desktop widgets** to the personal Hyprland bindings file. It supports Omarchy's Lua bindings and older `.conf` bindings, checks the active key map, preserves existing content with a backup and restores it if the binding does not activate. It never replaces a conflicting shortcut. If skipped, run `omarchy-widget bind-key` inside the desktop session or assign `omarchy-widget manage` yourself. Remove the single generated binding line (and its comment) to undo it, then reload Hyprland.
 
