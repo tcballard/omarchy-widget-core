@@ -7,7 +7,18 @@
   "version": "0.0.2",
   "entryPoint": "View.qml",
   "settingsEntryPoint": "Settings.qml",
-  "families": ["small", "medium", "large"],
+  "families": [
+    "small",
+    "medium",
+    "large"
+  ],
   "defaultFamily": "small",
-  "defaults": {"note": "Click to edit this note."}
+  "defaults": {
+    "note": "Click to edit this note."
+  },
+  "previews": {
+    "small": "previews/small.png",
+    "medium": "previews/medium.png",
+    "large": "previews/large.png"
+  }
 }
