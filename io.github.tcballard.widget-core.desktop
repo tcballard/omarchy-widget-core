@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Widgets
-Comment=Manage desktop widgets and their workspaces
+Name=Widget Library
+Comment=Find, add and arrange desktop widgets
 Exec=omarchy-widget manage
 Icon=preferences-desktop
 Terminal=false
