@@ -62,3 +62,31 @@ and stops its runner; version directories remain retained on disk under the
 existing recovery policy. Network data, reveal, migrations and code garbage
 collection are not added here. Settings editors continue to run in package
 islands. Core remains experimental v0.0.2.
+
+## Desktop test-environment correction · 22 September 2026
+
+On the XPS, the portable manager matrix initially failed 12 of 40 runs around
+removal/uninstall assertions and control availability. Its `setdefault` allowed
+the desktop's `QT_QPA_PLATFORM=wayland;xcb` to override the documented offscreen
+fixture. Instrumented runs confirmed the Wayland backend and compositor-sized
+windows (932×551 or 932×1122 instead of the requested 760×660). Four instrumented
+native runs passed; an individual lost click was not captured, so those runs do
+not establish the exact event-level cause of each earlier failure.
+
+The suite now explicitly selects `offscreen` and the neutral `basic` platform
+theme. Direct manager tests enforce the same environment, assert the actual
+platform, and verify each synthetic click emits its control's action before
+checking registry results. The neutral theme also avoids inherited GTK trying
+to open a display in a headless process. No manager production logic changed.
+
+With PySide6 6.11.2, all 40 offscreen workflows passed: ten runs each at scale
+1, 1.25, 1.5 and 2. The first five runs preceded the additional click-delivery
+assertion; the remaining 35 included it. A final direct invocation with inherited
+desktop variables also passed. All six evidence-harness tests passed, including
+the regression that checks environment isolation for every suite command.
+This resolves the observed portable-test flakiness; it does not replace real
+manager focus, input, compositor or desktop acceptance.
+
+Local raw evidence: `~/Work/widget-review-20260922/manager-offscreen-baseline.jsonl`
+and `manager-native-diagnostic.log`; the evidence report retains the original
+failed runs and appends the successful matrix rather than erasing history.

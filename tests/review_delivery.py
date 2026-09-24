@@ -87,7 +87,7 @@ else:
         controller = controller.replace('Quickshell.env("OMARCHY_WIDGET_'+role+'") === "'+('manager' if role=='ROLE' else '1')+'"', 'false')
     helper_line = next(line for line in controller.splitlines() if 'readonly property string helper:' in line)
     controller = controller.replace(helper_line, 'property string helper:'+json.dumps(str(shim)))
-    context = source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {')]
+    context = source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {\n        title: "Widget settings"')]
     panel = source[source.index('        Core.SettingsPanel {'):source.index('    Variants {')].rsplit('\n    }', 1)[0]
     (temp/'Broken.qml').write_text('import QtQuick\nItem { broken syntax }')
     harness = 'import QtQuick\nimport qs.Commons\nimport "'+(root/'qml').as_uri()+'" as Core\nWindow {width:520;height:560;visible:true\n'+controller+context+panel+'''

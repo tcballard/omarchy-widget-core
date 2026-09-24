@@ -205,6 +205,9 @@ def capture(seconds, on_sample=None):
 
 
 def suite(worldclock=None, older_core=None, proxy=None):
+    # Portable fixtures must not inherit a desktop's wayland;xcb selection.
+    # Real desktop acceptance and resource capture are separate operations.
+    environment = dict(os.environ, QT_QPA_PLATFORM='offscreen', QT_QPA_PLATFORMTHEME='basic')
     helper = str(ROOT / 'target/debug/omarchy-widget')
     jobs = [('harness', [sys.executable, 'tests/desktop_review.py']),
             ('format', ['cargo', 'fmt', '--all', '--', '--check']),
@@ -213,7 +216,7 @@ def suite(worldclock=None, older_core=None, proxy=None):
             ('clippy', ['cargo', 'clippy', '--locked', '--all-targets', '--', '-D', 'warnings']),
             ('build', ['cargo', 'build', '--locked']),
             ('release-size-build', ['cargo', 'build', '--release', '--locked'])]
-    no_helper = ['qml_smoke', 'lifecycle', 'window_lifecycle', 'preview_contract', 'installer', 'keybinding', 'sandbox']
+    no_helper = ['qml_smoke', 'lifecycle', 'window_lifecycle', 'quickshell_exit', 'preview_contract', 'installer', 'keybinding', 'sandbox']
     with_helper = ['declarative', 'declarative_controller', 'sdk', 'review_delivery', 'package_helpers', 'countdown_integration', 'runtime_integration']
     jobs += [(name, [sys.executable, f'tests/{name}.py']) for name in no_helper]
     jobs += [(name, [sys.executable, f'tests/{name}.py', helper]) for name in with_helper]
@@ -235,16 +238,16 @@ def suite(worldclock=None, older_core=None, proxy=None):
         if argv and helper in argv and not built:
             result = {'status': 'blocked', 'output': 'Default build failed; refusing to test a stale helper.'}
         else:
-            result = command(argv, timeout=900) if argv else {'status': 'blocked', 'output': 'Supply the documented fixture argument; not run.'}
+            result = command(argv, timeout=900, env=environment) if argv else {'status': 'blocked', 'output': 'Supply the documented fixture argument; not run.'}
         if name == 'build':
             built = result['status'] == 'pass'
         yield name, result
     if proxy and built:
-        result = command(['cargo', 'build', '--locked', '--features', 'experimental-reveal'], timeout=900)
+        result = command(['cargo', 'build', '--locked', '--features', 'experimental-reveal'], timeout=900, env=environment)
         yield 'build-reveal', result
         if result['status'] == 'pass':
-            yield 'wayland-reveal', command([sys.executable, 'tests/wayland_filter.py', str(proxy), helper, '--experimental-reveal'], timeout=900)
-        yield 'restore-default-build', command(['cargo', 'build', '--locked'], timeout=900)
+            yield 'wayland-reveal', command([sys.executable, 'tests/wayland_filter.py', str(proxy), helper, '--experimental-reveal'], timeout=900, env=environment)
+        yield 'restore-default-build', command(['cargo', 'build', '--locked'], timeout=900, env=environment)
     else:
         yield 'wayland-reveal', {'status': 'blocked', 'output': 'Supply --proxy; not run.'}
     yield 'resources-live', {'status': 'not-run', 'output': 'Run existing resources CI job in its disposable user; record URL under resources. Never run on the normal desktop.'}

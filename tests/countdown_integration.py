@@ -37,7 +37,7 @@ with tempfile.TemporaryDirectory() as tmp:
     controller=controller.replace(line,'property string helper:'+json.dumps(str(binary)))
     controller=controller.replace('property var installed: []','property var installed:'+json.dumps(cli('list')['installed']))
     context=source[source.index('            Core.Lifecycle {'):source.index('            Core.WidgetFrame {')]
-    settings=source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {')]
+    settings=source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {\n        title: "Widget settings"')]
     panel=source[source.index('        Core.SettingsPanel {'):source.index('    Variants {')].rsplit('\n    }',1)[0].replace('objectName: "settings-panel"','visible:root.configuring!=="";objectName: "settings-panel"')
     harness='''import QtQuick
 import qs.Commons

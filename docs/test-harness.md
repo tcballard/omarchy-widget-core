@@ -29,6 +29,14 @@ Use World Clock commit `e23549064d28d22d78c679d9d0b042f9532bafa1` and older Core
 
 The suite builds/tests Rust in both feature configurations, checks formatting/clippy, builds the release binary for size, runs QML/integration/SDK/installer/keybinding/geometry tests, runs the manager ten times at each of four scales, live sandbox checks, supplied compatibility/World Clock fixtures and both Wayland feature cases. Each command has a 15-minute limit; failures do not stop later independent tests. Exit status is nonzero for any failure, timeout, blocked or unrun case. The destructive resource-pressure job is deliberately **not run** on your ordinary desktop: run the existing CI `resources` job in its disposable user and record its URL. Consequently the suite alone never claims complete acceptance.
 
+The portable suite explicitly selects Qt's `offscreen` platform and a neutral
+platform theme, overriding desktop environment variables such as
+`QT_QPA_PLATFORM=wayland;xcb`. The manager test also enforces offscreen when run
+directly: its synthetic clicks assume a fixed-size window outside compositor
+focus and tiling rules. This is separate from live desktop acceptance. The
+`quickshell_exit` check requires `qs` and runs the production idle-exit timer in
+the actual Quickshell runtime with an isolated runtime directory.
+
 ## Measure the real stack
 
 Wait for compilation, installation and startup to finish. Run measurements with no concurrent test suite or heavy unrelated work. Prepare each scenario yourself using the manager, then capture it. The collector does not add, hide, delete, restart or kill your widgets.

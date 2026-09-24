@@ -9,7 +9,10 @@ import sys
 import tempfile
 import time
 
-os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+# This harness synthesizes clicks in a fixed-size window. A desktop-provided
+# Wayland backend lets the compositor resize/focus it and invalidates that setup.
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+os.environ['QT_QPA_PLATFORMTHEME'] = 'basic'
 from PySide6.QtCore import QObject, QUrl, QMetaObject, Q_ARG, Q_RETURN_ARG, QPoint, Qt
 from PySide6.QtGui import QGuiApplication, QImage, QColor
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
@@ -21,6 +24,7 @@ root = Path(__file__).resolve().parents[1]
 binary = Path(sys.argv[1]).resolve()
 qmlRegisterType(Process, 'Quickshell.Io', 1, 0, 'Process')
 app = QGuiApplication([])
+assert app.platformName() == 'offscreen', app.platformName()
 
 
 def call(obj, method, *args):
@@ -132,8 +136,11 @@ Window {
                 assert local.y() >= -1 and local.y()+item.height() <= listing.height()+1, (name, local.y(), listing.height())
         point = item.mapToScene(QPoint(int(item.width()/2), int(item.height()/2)))
         assert 0 <= point.y() < window.height(), (name, point.y())
+        clicks = []
+        item.clicked.connect(lambda: clicks.append(True))
         QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                          QPoint(int(point.x()), int(point.y())))
+        assert len(clicks) == 1, ('Mouse click did not activate control', name, point.x(), point.y())
         sync()
 
     def show_instance(instance):
@@ -144,6 +151,11 @@ Window {
         listing = find(window.contentItem(), 'instances-list')
         QMetaObject.invokeMethod(listing, 'positionViewAtIndex', Q_ARG('int', index), Q_ARG('int', 0))
         QTest.qWait(80)
+        details = find(window.contentItem(), 'instance-details-' + instance)
+        if details.property('text').startswith('More'):
+            # Secondary instance actions are deliberately disclosed on demand.
+            assert not find(window.contentItem(), 'remove-' + instance).isVisible()
+            click('instance-details-' + instance)
 
     def placement(instance):
         return next(e['placement'] for e in cli('list')['installed'] if e['instanceId'] == instance)
@@ -178,17 +190,26 @@ Window {
     assert cli('list')['runtime']['edit']['instance'] == first
     # Cancel and Escape do not remove anything; confirmation then removes only first.
     click('remove-' + first)
+    assert window.activeFocusItem().objectName() == 'cancel-removal'
     click('cancel-removal')
+    assert window.activeFocusItem().objectName() == 'remove-' + first
     assert placement(first)['enabled']
     click('remove-' + first)
     QTest.keyClick(window, Qt.Key.Key_Escape)
     sync()
     assert placement(first)['enabled']
+    assert window.activeFocusItem().objectName() == 'remove-' + first
     click('remove-' + first)
     click('confirm-remove')
     assert len([e for e in state()['installed'] if e.get('placement')]) == 2
     assert placement(second) == before_second and cli('list')['runtime']['edit'] is None
     click('available-tab')
+    assert not find(window.contentItem(), 'uninstall-' + package_id).isVisible()
+    # Disclosure is keyboard operable and survives an unchanged registry refresh.
+    find(window.contentItem(), 'package-details-' + package_id).forceActiveFocus()
+    QTest.keyClick(window, Qt.Key.Key_Return)
+    sync()
+    assert find(window.contentItem(), 'uninstall-' + package_id).isVisible()
     click('uninstall-' + package_id)
     click('uninstall-keep')
     assert not state()['catalog'] and not state()['installed'] and len(state()['retained']) == 2

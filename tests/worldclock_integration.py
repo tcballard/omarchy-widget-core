@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Two real World Clock editors + production Core settings/queue + durable Rust CLI.
+"""Two World Clock instances + production declarative settings/queue + durable Rust CLI.
 Qt adapts Process to QProcess. No Quickshell/Wayland or sandbox acceptance claim.
 Usage: python3 tests/worldclock_integration.py BINARY WORLD_CLOCK_CHECKOUT
 """
@@ -73,6 +73,8 @@ with tempfile.TemporaryDirectory() as directory:
     original = placements()
     for name in ['Commons', 'Ui']:
         shutil.copytree(root / name, temp / 'qs' / name)
+    (temp / 'qml').mkdir()
+    shutil.copyfile(root / 'qml' / 'DeclarativeSettings.qml', temp / 'qml' / 'DeclarativeSettings.qml')
     io = temp / 'Quickshell' / 'Io'
     io.mkdir(parents=True)
     (io / 'qmldir').write_text('module Quickshell.Io\nStdioCollector 1.0 StdioCollector.qml\n')
@@ -87,7 +89,7 @@ with tempfile.TemporaryDirectory() as directory:
     controller = controller.replace('Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"', 'false')
     helper_line = next(line for line in controller.splitlines() if 'readonly property string helper:' in line)
     controller = controller.replace(helper_line, '    property string helper: ' + json.dumps(str(binary)))
-    context = source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {')]
+    context = source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {\n        title: "Widget settings"')]
     panel = source[source.index('        Core.SettingsPanel {'):source.index('    Variants {')].rsplit('\n    }', 1)[0]
     harness = '''import QtQuick
 import qs.Commons
@@ -99,6 +101,12 @@ Window {
     function loadSnapshot(text) { installed=JSON.parse(text).installed; return true; }
     function openEditor(id) { configure(id); return configuring; }
     function draft() { return JSON.stringify(settingsContext.draftSettings); }
+    function addCity(zone) {
+        var next=JSON.parse(JSON.stringify(settingsContext.draftSettings));
+        next.cities.push({label:zone,zone:zone});
+        settingsContext.draftSettings=next;
+        return true;
+    }
     function closeEditor() { closeSettings(); return true; }
     function pending() { return operation.busy; }
     function current() { return configuring; }
@@ -133,7 +141,7 @@ Window {
         QTest.qWait(50)
         item = call(controller, 'activeEditor')
         editor_roots.append(item)
-        return item.findChild(QObject, 'city-editor')
+        return item
 
     def button(name):
         QTest.qWait(50)
@@ -144,9 +152,9 @@ Window {
     def draft():
         return json.loads(call(controller, 'draft'))
 
-    # Cancel must discard an actual widget edit, with no write or cross-instance changes.
+    # Cancel must discard a declarative settings edit without touching a sibling.
     editor = open_editor(first)
-    QMetaObject.invokeMethod(editor, 'add', Q_ARG('QVariant', 'Europe/Paris'))
+    call(controller, 'addCity', 'Europe/Paris')
     assert draft()['cities'][-1]['zone'] == 'Europe/Paris'
     generation = call(controller, 'openGeneration')
     assert call(controller, 'openEditor', first) == first
@@ -158,7 +166,7 @@ Window {
     assert all(city['zone'] != 'Europe/Paris' for city in draft()['cities'])
     assert call(controller, 'oldAcknowledgement', first, generation) == first, 'Old save closed a new editor'
     spin(lambda: not call(controller, 'pending'), 'Acknowledgement refresh did not finish')
-    QMetaObject.invokeMethod(editor, 'add', Q_ARG('QVariant', 'Europe/Paris'))
+    call(controller, 'addCity', 'Europe/Paris')
     button('save-button')
     spin(lambda: call(controller, 'current') == '', 'Save did not close after durable acknowledgement')
     spin(lambda: not call(controller, 'pending'), 'Save queue did not settle')
@@ -166,9 +174,9 @@ Window {
     assert after_first[first]['settings']['cities'][-1]['zone'] == 'Europe/Paris'
     assert after_first[second] == original[second], 'Saving first clock changed its sibling'
 
-    # Escape must reach Core from the embedded CityEditor, without writing anything.
+    # Escape must reach Core from the declarative editor without writing anything.
     editor = open_editor(second)
-    QMetaObject.invokeMethod(editor, 'add', Q_ARG('QVariant', 'Asia/Kathmandu'))
+    call(controller, 'addCity', 'Asia/Kathmandu')
     QMetaObject.invokeMethod(editor, 'forceActiveFocus')
     QTest.keyClick(window, Qt.Key.Key_Escape)
     assert call(controller, 'current') == '', 'City editor swallowed Core Cancel'
@@ -176,7 +184,7 @@ Window {
 
     # A concurrent external edit must retain the visible draft and reject stale Save.
     editor = open_editor(second)
-    QMetaObject.invokeMethod(editor, 'add', Q_ARG('QVariant', 'Asia/Kathmandu'))
+    call(controller, 'addCity', 'Asia/Kathmandu')
     concurrent = dict(original[second]['settings'], displayMode='analogue')
     assert call(controller,'action',second,json.dumps(concurrent),original[second]['revision'])
     spin(lambda: not call(controller,'pending'),'Display action did not settle')
@@ -192,7 +200,7 @@ Window {
     editor = open_editor(second)
     assert draft()['displayMode'] == 'analogue'
     assert not panel.property('error'), 'Reopened editor retained a previous save error'
-    QMetaObject.invokeMethod(editor, 'add', Q_ARG('QVariant', 'Asia/Kathmandu'))
+    call(controller, 'addCity', 'Asia/Kathmandu')
     button('save-button')
     spin(lambda: call(controller, 'current') == '', 'Second clock save did not finish')
     spin(lambda: not call(controller, 'pending'), 'Second clock queue did not settle')

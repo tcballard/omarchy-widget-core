@@ -25,7 +25,7 @@ case "$method" in
     systemctl --user is-active "$unit" || exit $?
     "$config/bin/omarchy-widget" list; exit $? ;;
   sandbox-check) exec /usr/bin/bash "$config/sandbox-launch" check ;;
-  manage|arrange|refresh|show|hide-all|reveal|dismiss-reveal)
+  manage|arrange|refresh|show|hide-all|toggle|reveal|dismiss-reveal)
     start || exit $?
     "$config/bin/omarchy-widget" control "$method"; exit $? ;;
 esac

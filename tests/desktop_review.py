@@ -13,6 +13,18 @@ spec.loader.exec_module(review)
 
 
 class EvidenceTests(unittest.TestCase):
+    def test_portable_suite_overrides_desktop_qt_backend(self):
+        with patch.dict(review.os.environ, {'QT_QPA_PLATFORM': 'wayland;xcb',
+                                            'QT_QPA_PLATFORMTHEME': 'gtk3'}), \
+             patch.object(review, 'OUT', Path('/unused-evidence'), create=True), \
+             patch.object(review, 'command', return_value={'status': 'pass'}) as command:
+            list(review.suite(Path('/clock'), Path('/older-core'), Path('/proxy')))
+            self.assertGreater(len(command.call_args_list), 40)
+            for call in command.call_args_list:
+                self.assertEqual(call.kwargs['env']['QT_QPA_PLATFORM'], 'offscreen')
+                self.assertEqual(call.kwargs['env']['QT_QPA_PLATFORMTHEME'], 'basic')
+            self.assertEqual(review.os.environ['QT_QPA_PLATFORM'], 'wayland;xcb')
+
     def test_restart_and_counter_reset_are_not_zero_cpu(self):
         first = {'identity': 12, 'cpu_usec': 100}
         self.assertIsNone(review.cpu_percent(first, {'identity': 13, 'cpu_usec': 500}, 1))
