@@ -301,6 +301,7 @@ Item {
                     onRefreshRequested: root.refresh()
                     onToggleRequested: function(id, enabled) { root.execute([enabled ? "show" : "hide", id]); }
                     onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
+                    onInstallRequested: function(path) { root.execute(["install",path]); }
                     onDuplicateRequested: function(id) { root.execute(["duplicate",id]); }
                     onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
                     onPackageControlRequested: function(id,action) { root.execute(["package-control",id,action]); }
