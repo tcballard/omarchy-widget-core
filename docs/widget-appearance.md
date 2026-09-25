@@ -15,7 +15,7 @@ The optional `widgets.json` alongside it is a **Core-owned extension**, not an o
 }
 ```
 
-Core inherits border size and rounding from resolved global Hyprland settings, overriding legacy radius/borderWidth appearance tokens. Border alpha is bounded 0–1, background alpha 0.6–1, padding 8–24 and scale 0.75–2. Theme scale affects content typography and padding, not cell sizes or desktop gaps. Per-instance appearance can override other frame tokens but cannot select arbitrary dimensions. The font must exist on the machine; Qt supplies a fallback otherwise.
+Core inherits border size and rounding from resolved global Hyprland settings, overriding legacy radius/borderWidth appearance tokens. Border alpha is bounded 0–1, background alpha 0.6–1, padding 8–24 and scale 0.75–2. Theme scale affects content typography and padding, not cell sizes or desktop gaps. Per-instance appearance settings cannot override the shared frame. Legacy values remain stored but only the desktop theme/ricing controls exterior presentation. The font must exist on the machine; Qt supplies a fallback otherwise.
 
 The idle frame follows desktop rounding/borders and has no title by default. Arrange exposes controls inside the same outer dimensions. GPU rendering masks the whole surface to its rounded outline. Software rendering uses the rounded background with content inset far enough to remain inside the corners; it does not depend on unsupported shader effects. Core owns content padding; widget authors should avoid painting a second card background.
 

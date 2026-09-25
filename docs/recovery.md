@@ -57,3 +57,9 @@ and rollback-after-edit conflicts, and verify unchanged registry state. They als
 exercise checkpoint reversal, visibility preservation and package control serials.
 Actual runaway-process resource containment remains covered by the existing
 resource CI job. Live desktop crash/restart presentation remains unverified.
+
+
+Final integration: every gear/manager settings request registers with Core before
+loading. Updates and rollback refuse while that package has an open editor.
+An explicit package restart/disable clears a stuck request and discards volatile
+drafts; use Save/Cancel first when the process is healthy.

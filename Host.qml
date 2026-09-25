@@ -65,7 +65,11 @@ Item {
     }
     function configure(id) {
         if(root.revealRunner) return false;
-        if(managerRole) { execute(["edit",id]); return; }
+        if(configuring && configuring!==id) {editorError="Save or cancel this editor before configuring another widget."; return;}
+        if(configuring===id) return;
+        execute(["edit",id]);
+    }
+    function openSettings(id) {
         // Repeated gear presses must not reset an unsaved draft.
         if(configuring===id) return;
         if(configuring!=="") { editorError="Save or cancel this editor before configuring another widget."; return; }
@@ -118,7 +122,7 @@ Item {
                     root.managerOpen=root.managerRole && response.runtime.managerOpen === true;
                     var edit=response.runtime.edit;
                     if(!root.managerRole && root.configuring==="" && edit && String(edit.serial)!==root.editSerial) {
-                        root.editSerial=String(edit.serial); root.configure(edit.instance);
+                        root.editSerial=String(edit.serial); root.openSettings(edit.instance);
                     }
                 }
                 root.themeAppearance=response.appearance || {};
@@ -311,7 +315,7 @@ Item {
                 readonly property string definitionId: "main"
                 readonly property string family: window.sizeName
                 readonly property string sizeName: window.metadata.coreApi===1 ? Grid.legacyName(window.sizeName) : window.sizeName
-                readonly property var appearance: Object.assign({}, root.themeAppearance, window.config.settings.appearance || {}, root.desktop.frame || {})
+                readonly property var appearance: Object.assign({}, root.themeAppearance, root.desktop.frame || {})
                 readonly property var saveState: root.saveStates[window.modelData] || ({saving:false,error:"",saved:false})
                 readonly property string saveError: saveState.error
                 readonly property bool saving: saveState.saving

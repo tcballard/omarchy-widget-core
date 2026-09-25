@@ -100,7 +100,8 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
             let d = workspaces::snapshot();
             let positions = grid::resolve(&layout["placements"], &d);
             let monitor = positions[&args[1]]["monitor"].as_str().unwrap_or("");
-            let active = p["enabled"] == true
+            let active = layout["runtime"]["packageControls"][package]["disabled"] != true
+                && p["enabled"] == true
                 && !monitor.is_empty()
                 && (layout["runtime"]["shown"] != false
                     || reveal::active(
@@ -110,23 +111,15 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
                 && (p["workspace"].is_null() || p["workspace"] == d["monitors"][monitor]);
             weather::request(&args[2], &args[3], active)
         }
-        Some("edit-done") if args.len() == 3 => {
-            let _lock = r.lock()?;
-            let mut current = r.layout()?;
-            if current["placements"][&args[1]]["packageId"] != package {
-                return Err("Instance is outside this runner's authority".into());
-            }
-            if current["runtime"]["edit"]["instance"] == args[1]
-                && current["runtime"]["edit"]["serial"]
-                    .as_u64()
-                    .map(|v| v.to_string())
-                    .as_deref()
-                    == Some(args[2].as_str())
-            {
-                current["runtime"]["edit"] = Value::Null;
-                r.commit(&mut current)?;
-            }
-            Ok(json!(true))
+        Some("edit")
+            if args.len() == 2 && layout["placements"][&args[1]]["packageId"] == package =>
+        {
+            r.request_edit(&args[1])
+        }
+        Some("edit-done")
+            if args.len() == 3 && layout["placements"][&args[1]]["packageId"] == package =>
+        {
+            r.finish_edit(&args[1], &args[2])
         }
         Some(op @ ("save" | "place" | "hide" | "workspace")) => {
             let expected = if op == "hide" { 2 } else { 3 };

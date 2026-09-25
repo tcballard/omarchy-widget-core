@@ -126,7 +126,8 @@ Window {
     editor_roots = []
 
     def open_editor(instance):
-        assert call(controller, 'openEditor', instance) == instance
+        call(controller, 'openEditor', instance)
+        spin(lambda: call(controller, 'current') == instance, 'Core edit request did not open')
         spin(lambda: panel.property('canSave'), 'Real World Clock editor did not load')
         QTest.qWait(50)
         item = call(controller, 'activeEditor')
