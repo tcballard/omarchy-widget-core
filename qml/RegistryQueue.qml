@@ -24,7 +24,7 @@ Item {
         return true;
     }
     function pump() {
-        if (current !== null || process.running || !pending.length) return;
+        if (current !== null || process.running || retryDelay.running || !pending.length) return;
         var queue=pending.slice(); current=queue.shift(); pending=queue;
         process.command=["/usr/bin/timeout","--kill-after=1","10",helper].concat(current.args);
         process.running=true;
@@ -33,16 +33,25 @@ Item {
     function finish(text, code) {
         if (current === null) return;
         watchdog.stop();
-        var request=current; current=null;
+        var request=current;
         var response={}; var message="";
         try {
             if (text.length>2097152) throw new Error("Registry response exceeds limit");
             response=JSON.parse(text);
             if (code !== 0) throw new Error(response.error || "Core operation failed");
         } catch(e) { message=String(e.message || e); }
+        if(message && (response.code === "busy" || response.code === "rate_limited") && (request.retries || 0)<4) {
+            request.retries=(request.retries || 0)+1;
+            current=null;
+            var queue=pending.slice();queue.unshift(request);pending=queue;
+            retryDelay.interval=Math.min(1000,100*Math.pow(2,request.retries));retryDelay.restart();
+            return;
+        }
+        current=null;
         completed(request,message === "",response,message);
         Qt.callLater(pump);
     }
+    Timer { id:retryDelay; onTriggered:root.pump() }
     Process {
         id: process
         stdout: StdioCollector { id: output; waitForEnd:true }

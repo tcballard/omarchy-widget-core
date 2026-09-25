@@ -34,7 +34,7 @@ while True:time.sleep(.1)
     payload.write_text('''import os,pathlib,subprocess,sys,time
 source=pathlib.Path(sys.argv[1]); role=(source/'role').read_text(); out=source
 (out/'payload.pid').write_text(str(os.getpid()))
-if role=='healthy':
+if role in ('healthy','healthy-restart'):
     while True:
         (out/'heartbeat').write_text(str(time.monotonic()))
         time.sleep(.1)
@@ -113,6 +113,16 @@ elif role=='tasks':
         for pid in (tasks[2]/'child-pids').read_text().split():
             until(lambda:not Path('/proc',pid).exists())
         print('PASS: stopping Core stops all package services and descendants; literal dollar/space paths preserved')
+        # Restart propagation must never revive an old supervisor's transient unit.
+        ctl('start',host)
+        replacement=start('healthy-restart')
+        old_pid=(replacement[2]/'payload.pid').read_text()
+        ctl('restart',host)
+        replacement[1].wait(timeout=10)
+        assert property(host,'ActiveState')=='active'
+        assert property(replacement[0],'ActiveState') not in ('active','activating','deactivating')
+        until(lambda:not Path('/proc',old_pid).exists())
+        print('PASS: restarting Core stops the old island without relaunching its stale generation')
     finally:
         for unit in units:ctl('stop',unit,check=False)
         if host_created:ctl('stop',host,check=False);ctl('reset-failed',host,check=False)

@@ -2,6 +2,7 @@
 use super::*;
 use std::collections::BTreeMap;
 use std::net::Shutdown;
+use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -67,8 +68,13 @@ fn scoped(
     args: &[String],
 ) -> Result<Value> {
     // Hold authority, ownership checks and mutation under the same registry lock.
-    let lock = r.lock()?;
-    let layout = r.layout()?;
+    let reading = matches!(args.first().map(String::as_str), Some("list" | "weather"));
+    let lock = if reading { r.read_lock()? } else { r.lock()? };
+    let layout = if args.first().is_some_and(|op| op == "list") {
+        r.display_layout()?.0
+    } else {
+        r.layout()?
+    };
     if r.source(&layout, package)? != source
         || layout["runtime"]["packageControls"][package]["serial"]
             .as_u64()
@@ -167,21 +173,41 @@ fn scoped(
                 &lock,
             )
         }
-        Some("control")
-            if args.len() == 2 && ["arrange", "finish-arrange"].contains(&args[1].as_str()) =>
-        {
+        Some("control") if args.len() == 2 && args[1] == "finish-arrange" => {
             r.control_locked(&args[1], &lock)
         }
         _ => Err("Operation is not available to widget runners".into()),
     }
 }
 
+#[derive(Default)]
+struct WriteBudget(std::collections::VecDeque<Instant>);
+impl WriteBudget {
+    fn admit(&mut self, args: &[String], now: Instant) -> Result<()> {
+        if matches!(args.first().map(String::as_str), Some("list" | "weather")) {
+            return Ok(());
+        }
+        while self
+            .0
+            .front()
+            .is_some_and(|start| now.saturating_duration_since(*start) >= Duration::from_secs(1))
+        {
+            self.0.pop_front();
+        }
+        if self.0.len() >= 5 {
+            return Err("Runner write budget exceeded; retry shortly".into());
+        }
+        self.0.push_back(now);
+        Ok(())
+    }
+}
 fn serve(
     listener: &UnixListener,
     r: &Registry,
     package: &str,
     source: &Path,
     serial: u64,
+    writes: &mut WriteBudget,
 ) -> Result<()> {
     // A fixed connection budget prevents one runner starving all the others.
     for _ in 0..1 {
@@ -193,10 +219,10 @@ fn serve(
         let result = (|| {
             let bytes = read_message(&mut stream, REQUEST_LIMIT, Duration::from_millis(100))?;
             let args: Vec<String> = serde_json::from_slice(&bytes).map_err(err)?;
+            writes.admit(&args, Instant::now())?;
             scoped(r, package, source, serial, &args)
         })();
-        let response =
-            result.unwrap_or_else(|e| json!({"error":e.chars().take(240).collect::<String>()}));
+        let response = result.unwrap_or_else(|e| error_response(&e));
         let _ = write_message(
             &mut stream,
             response.to_string().as_bytes(),
@@ -248,6 +274,7 @@ struct Runner {
     listener: UnixListener,
     unit: String,
     child: Child,
+    writes: WriteBudget,
 }
 impl Drop for Runner {
     fn drop(&mut self) {
@@ -320,6 +347,7 @@ fn launch(
         listener,
         unit,
         child,
+        writes: WriteBudget::default(),
     })
 }
 
@@ -334,25 +362,64 @@ pub fn supervise(config: &Path) -> Result<Value> {
     let base = runtime.join(format!("omarchy-widget-islands-{}", std::process::id()));
     fs::create_dir(&base).map_err(err)?;
     fs::set_permissions(&base, fs::Permissions::from_mode(0o700)).map_err(err)?;
-    let mut manager = Command::new("/usr/bin/qs")
-        .args(["--no-duplicate", "-p"])
-        .arg(config)
-        .env("OMARCHY_WIDGET_ROLE", "manager")
-        .env_remove("OMARCHY_WIDGET_BROKER")
-        .stdin(Stdio::null())
-        .spawn()
-        .map_err(err)?;
+    // No runner from this supervisor lifetime exists yet. A persisted editor
+    // cannot refer to an open window; clear its registration before launch.
+    let _ = retry_busy(|| r.clear_dead_editor(None).map(|()| json!(true)));
+    let mut manager: Option<Child> = None;
+    let mut manager_attempts = 0;
+    let mut manager_retry = Instant::now();
     let mut runners: BTreeMap<String, Runner> = BTreeMap::new();
+    let mut dead_editors: BTreeMap<String, String> = BTreeMap::new();
     let mut failures: BTreeMap<String, (u32, Instant)> = BTreeMap::new();
     let mut generations: BTreeMap<String, (PathBuf, u64)> = BTreeMap::new();
     let result = (|| {
         let mut next_scan = Instant::now();
         loop {
-            if manager.try_wait().map_err(err)?.is_some() {
-                return Err("Widget manager exited".into());
+            if let Some(child) = manager.as_mut() {
+                if child.try_wait().map_err(err)?.is_some() {
+                    manager = None;
+                    manager_retry = Instant::now() + Duration::from_secs(5);
+                }
             }
             if Instant::now() >= next_scan {
-                let snapshot = r.snapshot()?;
+                let snapshot = match r.snapshot() {
+                    Ok(snapshot) => snapshot,
+                    Err(e) => {
+                        // Preserve current runners and keep the manager available
+                        // for recovery even if the saved file cannot be parsed.
+                        eprintln!("Widget layout unavailable: {e}");
+                        let _ = atomic_json(
+                            &r.state.join("runner-health.json"),
+                            &json!({"updatedAt":reveal::now(),"error":e}),
+                        );
+                        next_scan = Instant::now() + Duration::from_secs(1);
+                        std::thread::sleep(Duration::from_secs(1));
+                        continue;
+                    }
+                };
+                if manager_required(&snapshot) {
+                    if manager.is_none() && manager_attempts < 3 && Instant::now() >= manager_retry
+                    {
+                        manager_attempts += 1;
+                        match Command::new("/usr/bin/qs")
+                            .args(["--no-duplicate", "-p"])
+                            .arg(config)
+                            .env("OMARCHY_WIDGET_ROLE", "manager")
+                            .env_remove("OMARCHY_WIDGET_BROKER")
+                            .stdin(Stdio::null())
+                            .spawn()
+                        {
+                            Ok(child) => manager = Some(child),
+                            Err(error) => {
+                                eprintln!("Widget manager launch failed: {error}");
+                                manager_retry = Instant::now() + Duration::from_secs(5);
+                            }
+                        }
+                    }
+                } else {
+                    manager_attempts = 0;
+                    manager_retry = Instant::now();
+                }
                 let reveal_until = if snapshot["runtime"]["revealing"] == true {
                     snapshot["runtime"]["revealUntil"].as_u64().unwrap_or(0)
                 } else {
@@ -394,7 +461,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     wanted.get(id) == Some(&runner.source) && runner.reveal_until == reveal_until
                 });
                 for (id, source) in wanted {
-                    if runners.contains_key(&id) {
+                    // Finish recovery before a replacement can open a new editor.
+                    if runners.contains_key(&id) || dead_editors.contains_key(&id) {
                         continue;
                     }
                     if let Some((count, when)) = failures.get(&id) {
@@ -416,6 +484,10 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         }
                         Err(e) => {
                             eprintln!("Widget {id}: {e}");
+                            dead_editors.insert(
+                                id.clone(),
+                                "Clearing settings from the stopped runner".into(),
+                            );
                             let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                             failures.insert(id.clone(), (count, Instant::now()));
                             if !runners
@@ -435,6 +507,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         "disabled"
                     } else if runners.contains_key(id) {
                         "running"
+                    } else if dead_editors.contains_key(id) {
+                        "recovery-blocked"
                     } else if count >= 3 {
                         "failed"
                     } else if count > 0 {
@@ -442,7 +516,10 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     } else {
                         "idle"
                     };
-                    health.insert(id.into(), json!({"state":state,"failures":count}));
+                    health.insert(
+                        id.into(),
+                        runner_health(state, count, dead_editors.get(id).map(String::as_str)),
+                    );
                 }
                 let _ = atomic_json(
                     &r.state.join("runner-health.json"),
@@ -462,27 +539,138 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     }
                     continue;
                 }
-                serve(&runner.listener, &r, id, &runner.source, runner.serial)?;
+                serve(
+                    &runner.listener,
+                    &r,
+                    id,
+                    &runner.source,
+                    runner.serial,
+                    &mut runner.writes,
+                )?;
             }
             for id in dead {
+                dead_editors.insert(
+                    id.clone(),
+                    "Clearing settings from the stopped runner".into(),
+                );
                 runners.remove(&id);
                 let count = failures.get(&id).map_or(1, |v| v.0 + 1);
                 failures.insert(id.clone(), (count, Instant::now()));
                 eprintln!("Widget {id} stopped; failure {count}/3 (restart this package in Widgets to retry)");
             }
-            std::thread::sleep(Duration::from_millis(20));
+            dead_editors.retain(|id, reason| match r.clear_dead_editor(Some(id)) {
+                Ok(()) => false,
+                Err(error) => {
+                    *reason = error.chars().take(1000).collect();
+                    true
+                }
+            });
+            let descriptors: Vec<_> = runners.values().map(|r| r.listener.as_raw_fd()).collect();
+            wait_for_brokers(
+                &descriptors,
+                next_scan.saturating_duration_since(Instant::now()),
+            )?;
         }
     })();
     drop(runners);
-    let _ = manager.kill();
-    let _ = manager.wait();
+    if let Some(mut child) = manager {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
     let _ = fs::remove_dir_all(base);
     result
+}
+
+fn manager_required(snapshot: &Value) -> bool {
+    ["managerOpen", "editing", "revealing"]
+        .iter()
+        .any(|key| snapshot["runtime"][key] == true)
+}
+
+// Linux poll wakes immediately for broker requests; housekeeping remains at 1 Hz.
+fn wait_for_brokers(descriptors: &[RawFd], timeout: Duration) -> Result<()> {
+    #[repr(C)]
+    struct PollFd {
+        fd: std::ffi::c_int,
+        events: std::ffi::c_short,
+        revents: std::ffi::c_short,
+    }
+    unsafe extern "C" {
+        fn poll(fds: *mut PollFd, count: usize, timeout: std::ffi::c_int) -> std::ffi::c_int;
+    }
+    let mut fds: Vec<_> = descriptors
+        .iter()
+        .map(|fd| PollFd {
+            fd: *fd,
+            events: 1,
+            revents: 0,
+        })
+        .collect();
+    // Round up sub-millisecond waits to avoid spinning before the next scan.
+    let millis = timeout.as_millis().saturating_add(1).min(1000) as i32;
+    // The descriptors remain owned by runners throughout this synchronous call.
+    if unsafe { poll(fds.as_mut_ptr(), fds.len(), millis) } < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(err(error));
+        }
+    }
+    Ok(())
+}
+
+fn runner_health(state: &str, failures: u32, recovery_error: Option<&str>) -> Value {
+    let message = recovery_error.map(|error| {
+        format!("Restart paused until stale settings can be cleared: {error}. Resolve the registry error; if layout repair is required, run omarchy-widget repair. Recovery retries automatically.")
+    });
+    json!({"state":state,"failures":failures,"message":message})
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn manager_is_only_required_for_trusted_surfaces() {
+        assert!(!manager_required(
+            &json!({"runtime":{"edit":{"instance":"clock"}}})
+        ));
+        for key in ["managerOpen", "editing", "revealing"] {
+            let mut snapshot = json!({"runtime":{}});
+            snapshot["runtime"][key] = json!(true);
+            assert!(manager_required(&snapshot));
+            snapshot["runtime"][key] = json!(false);
+            assert!(!manager_required(&snapshot));
+        }
+    }
+
+    #[test]
+    fn broker_connection_wakes_housekeeping_wait() {
+        let path = env::temp_dir().join(format!("widget-poll-{}.sock", nonce()));
+        let listener = UnixListener::bind(&path).unwrap();
+        let client_path = path.clone();
+        let client = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            UnixStream::connect(client_path).unwrap()
+        });
+        let started = Instant::now();
+        wait_for_brokers(&[listener.as_raw_fd()], Duration::from_secs(1)).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(800));
+        let _stream = client.join().unwrap();
+        listener.accept().unwrap();
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn blocked_editor_recovery_explains_the_hold() {
+        let error = "Invalid placement; layout preserved".to_string();
+        let health = runner_health("recovery-blocked", 1, Some(&error));
+        assert_eq!(health["state"], "recovery-blocked");
+        let message = health["message"].as_str().unwrap();
+        assert!(message.contains(&error));
+        assert!(message.contains("omarchy-widget repair"));
+        assert!(message.contains("automatically"));
+        assert!(runner_health("running", 0, None)["message"].is_null());
+    }
+
     #[test]
     fn trickled_requests_have_an_absolute_deadline() {
         let (mut reader, mut writer) = UnixStream::pair().unwrap();
@@ -608,7 +796,15 @@ mod tests {
         let listener = UnixListener::bind(&socket_path).unwrap();
         let socket_string = socket_path.to_str().unwrap().to_owned();
         let request = std::thread::spawn(move || client(&socket_string, &["list".into()]));
-        serve(&listener, &r, "io.test.a", &source, 0).unwrap();
+        serve(
+            &listener,
+            &r,
+            "io.test.a",
+            &source,
+            0,
+            &mut WriteBudget::default(),
+        )
+        .unwrap();
         let response = request.join().unwrap().unwrap();
         assert_eq!(response["installed"].as_array().unwrap().len(), 1);
         assert!(!response.to_string().contains("io.test.b"));
@@ -706,5 +902,110 @@ mod tests {
         ]
         .map(str::to_owned);
         assert!(policy(&args, r#"{"keyboard_interactivity":1}"#, true).is_err());
+    }
+    #[test]
+    fn rolling_write_budget_does_not_block_reads() {
+        let mut budget = WriteBudget::default();
+        let start = Instant::now();
+        for _ in 0..5 {
+            budget.admit(&["save".into()], start).unwrap();
+        }
+        assert!(budget
+            .admit(&["save".into()], start + Duration::from_millis(999))
+            .is_err());
+        for _ in 0..100 {
+            budget.admit(&["list".into()], start).unwrap();
+        }
+        budget
+            .admit(&["edit-done".into()], start + Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(budget.0.len(), 1);
+    }
+    #[test]
+    fn refused_content_failure_can_retry_but_old_generation_cannot_stop_new_code() {
+        let base = env::temp_dir().join(format!("content-delivery-{}", nonce()));
+        fs::create_dir(&base).unwrap();
+        let r = Registry {
+            data: base.join("data"),
+            state: base.join("state"),
+        };
+        let src = base.join("source");
+        sdk::scaffold(&src, "io.review.recovery", "Recovery").unwrap();
+        r.install(&src).unwrap();
+        let id = r
+            .placement("io.review.recovery", "create", Some("small"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let source = r
+            .source(&r.layout().unwrap(), "io.review.recovery")
+            .unwrap();
+        let request = vec!["content-failed".into(), id];
+        let lock = r.lock().unwrap();
+        assert!(scoped(&r, "io.review.recovery", &source, 0, &request)
+            .unwrap_err()
+            .starts_with("Registry busy;"));
+        drop(lock);
+        assert!(scoped(
+            &r,
+            "io.review.recovery",
+            &source,
+            0,
+            &["control".into(), "arrange".into()]
+        )
+        .is_err());
+        scoped(&r, "io.review.recovery", &source, 0, &request).unwrap();
+        assert_eq!(
+            r.layout().unwrap()["runtime"]["packageControls"]["io.review.recovery"]["loadFailure"],
+            true
+        );
+        r.package_control("io.review.recovery", "enable").unwrap();
+        r.deploy(&src, true).unwrap();
+        let before = r.layout().unwrap();
+        assert!(scoped(&r, "io.review.recovery", &source, 0, &request).is_err());
+        assert_eq!(r.layout().unwrap(), before);
+        fs::remove_dir_all(base).unwrap();
+    }
+    #[test]
+    fn manager_writes_survive_repeated_broker_read_contention() {
+        let base = env::temp_dir().join(format!("broker-contention-{}", nonce()));
+        fs::create_dir(&base).unwrap();
+        let r = std::sync::Arc::new(Registry {
+            data: base.join("data"),
+            state: base.join("state"),
+        });
+        let src = base.join("source");
+        sdk::scaffold(&src, "io.review.contention", "Contention").unwrap();
+        r.install(&src).unwrap();
+        let id = r
+            .placement("io.review.contention", "create", Some("small"))
+            .unwrap()["updated"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let source = r
+            .source(&r.layout().unwrap(), "io.review.contention")
+            .unwrap();
+        let reader = r.clone();
+        let polling = std::thread::spawn(move || {
+            for _ in 0..500 {
+                let _ = scoped(
+                    &reader,
+                    "io.review.contention",
+                    &source,
+                    0,
+                    &["list".into()],
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        });
+        for n in 0..300 {
+            retry_busy(|| r.placement(&id, if n % 2 == 0 { "hide" } else { "show" }, None))
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        polling.join().unwrap();
+        fs::remove_dir_all(base).unwrap();
     }
 }

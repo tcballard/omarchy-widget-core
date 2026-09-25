@@ -13,7 +13,7 @@ Applies to new API 3 widgets targeting experimental Core v0.0.2. The [API contra
 ## UI and behaviour conventions to review
 
 - Native QML content. Keep business/data logic separate from the view; use Rust for a helper when complexity warrants it. A widget does not need a Rust binary simply to comply.
-- Content-first idle surface. When configurable, expose a small top-right gear with an accessible name and call widgetContext.requestConfigure(). Keep configuration in the separate settings window. Core owns Save/Cancel, errors and acknowledgement. A shared Core-owned gear is not yet automatically injected.
+- Content-first idle surface. For API 3, declare a settings editor and let Core supply its accessible top-right gear. API 2 compatibility content may call widgetContext.requestConfigure(). Keep configuration in the separate settings window. Core owns Save/Cancel, errors and acknowledgement. API 3 editors receive a shared Core-owned 32-unit corner gear. It reserves no header band. Leave its top-right corner clear; do not add a second gear.
 - Use Core's semantic colours, typography, spacing and appearance values; avoid hard-coded dark-only styling. Core owns the surrounding frame. Widget-specific content may differ: a clock need not look like a calendar.
 - Work at every declared family, including theme scaling. Declare only supported sizes. Clip/scroll deliberately; no arbitrary outer resizing or unreadable shrinking to force content to fit.
 - Suspend background work when inactive, bound helper processes and requests, discard obsolete responses, and avoid constant animation or per-second updates without a product reason.

@@ -27,7 +27,6 @@ pub fn service_args(unit: &str) -> Result<Vec<String>> {
         "--property=Slice=app.slice".into(),
         "--property=BindsTo=omarchy-widget-host.service".into(),
         "--property=After=omarchy-widget-host.service".into(),
-        "--property=PartOf=omarchy-widget-host.service".into(),
         format!("--property=MemoryMax={MEMORY}"),
         "--property=MemorySwapMax=0".into(),
         "--property=CPUQuota=25%".into(),
@@ -48,11 +47,7 @@ pub fn preflight() -> Result<Value> {
     let unit = format!("omarchy-widget-island-check-{}.service", std::process::id());
     let mut args = service_args(&unit)?;
     // Preflight must not start or depend on an installed Core service.
-    args.retain(|s| {
-        !s.starts_with("--property=BindsTo=")
-            && !s.starts_with("--property=After=")
-            && !s.starts_with("--property=PartOf=")
-    });
+    args.retain(|s| !s.starts_with("--property=BindsTo=") && !s.starts_with("--property=After="));
     let status = Command::new("/usr/bin/systemd-run")
         .args(args)
         .arg(env::current_exe().map_err(err)?)
@@ -225,6 +220,7 @@ mod tests {
         ] {
             assert!(args.iter().any(|a| a == property));
         }
+        assert!(!args.iter().any(|arg| arg.starts_with("--property=PartOf=")));
         assert!(!args
             .iter()
             .any(|a| a == "--scope" || a.contains("Delegate=")));

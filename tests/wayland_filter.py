@@ -2,9 +2,14 @@
 """Exercise the real pinned proxy against an adversarial wire client and fake compositor.
 No claim about visual/compositor integration: this tests actual protocol enforcement.
 """
-import json, os, socket, struct, subprocess, sys, tempfile, time
+import argparse, json, os, socket, struct, subprocess, tempfile, time
 from pathlib import Path
-proxy, helper = map(lambda p: str(Path(p).resolve()), sys.argv[1:])
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('proxy')
+parser.add_argument('helper')
+parser.add_argument('--experimental-reveal', action='store_true')
+args = parser.parse_args()
+proxy, helper = map(lambda p: str(Path(p).resolve()), (args.proxy, args.helper))
 root = Path(__file__).resolve().parents[1]
 def uint(n): return struct.pack('=I', n)
 def string(s):
@@ -56,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix='wl-filter-test-') as tmp:
                 request=message(2,0,uint(number)+string(name)+uint(4)+uint(obj));client.sendall(request);assert recv(server)==request
             request=message(3,0,uint(5));client.sendall(request);assert recv(server)==request
             request=message(4,0,uint(6)+uint(5)+uint(0)+uint(layer)+string('widget-test'));client.sendall(request)
-            if layer==1 or leased:
+            if layer==1 or (leased and args.experimental_reveal):
                 assert recv(server)==request, 'Valid bottom-layer surface blocked'
                 # Exclusive keyboard capture must be rejected as well.
                 client.sendall(message(6,4,uint(1)))

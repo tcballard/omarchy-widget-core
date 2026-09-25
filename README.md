@@ -6,6 +6,10 @@ A shared native desktop-widget host for Omarchy: fixed widget families, a cell o
 
 **v0.0.2 / API 3 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. No installed Omarchy version has been verified for this new runtime on a live desktop yet. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
 
+Core is a separate desktop application and supervised service. Omarchy's [plugin guide](https://plugins.omarchy.org/develop.html) places ordinary plugins in the shared shell and prohibits a second Quickshell process for a plugin. Core deliberately uses external package renderers to isolate widget code; its compatibility plugin is only a command bridge. Widget packages implement Core's contract, not Omarchy's shell-plugin contract. The development installer currently stores the app under that bridge's directory. This is not a claim of marketplace or upstream acceptance; supported Arch packaging and live acceptance remain release work.
+
+The intended experience is a consistent Small/Medium/Large desktop grid with independently installed and configured widgets. Rainmeter informs creator participation and extensibility; macOS informs the constrained layout and interaction model. Freeform skins and Rainmeter compatibility are outside this contract.
+
 See [compatibility](docs/compatibility.md) and [review remediation](docs/review-remediation.md) for the current contract and remaining acceptance gates.
 
 ## Install or upgrade Core
@@ -55,7 +59,7 @@ This is a development fixture, not a new product widget.
 
 Core inherits global desktop gaps. Arrange shows cell outlines; drag or use arrow keys to move one cell, and cycle only the sizes the widget supports. Explicit moves and resizes reject collisions without pushing other widgets. Theme scale affects content rather than the cell grid.
 
-API 1 packages remain loadable through a compatibility facade, but their arbitrary dimensions become fixed families: compact → small, standard → medium, wide → large. World Clock’s two stacked PRs supply the family layouts and shared settings-editor contract; Core CI pins that implementation for integration testing.
+API 1 support has been removed. Packages must use manifest schema 2 and Core API 2 or 3; new widgets target API 3. Core accepts only the small, medium and large families. World Clock uses API 3, and Core CI pins its implementation for integration testing. See [compatibility](docs/compatibility.md) for porting older development packages.
 
 ## State and recovery
 
@@ -72,8 +76,11 @@ command remains an alias for uninstall with settings deletion.
 
 `create PACKAGE_ID small|medium|large` adds a fresh instance from defaults;
 `duplicate INSTANCE_ID` copies an existing instance's settings into an independent
-identity. `add INSTANCE_ID` shows a hidden instance. Legacy `add PACKAGE_ID` still
-creates or shows that package's original placement. `stop`, `start`, `restart` and
+identity. `show INSTANCE_ID` shows an existing hidden instance and refuses deleted
+identities. Legacy `add PACKAGE_ID` is CLI compatibility: it can create an initial
+package-ID placement, but after deletion it allocates a fresh identity returned in
+`updated`. Old commands cannot target the replacement. Existing `add INSTANCE_ID`
+also remains supported; the manager uses `show`. `stop`, `start`, `restart` and
 `hide-all` control Core and its widget runners.
 
 To uninstall the runtime while preserving widget data:
@@ -157,10 +164,14 @@ The seven milestones are implemented as dependent draft PRs; see the
 [stack and verification record](docs/implementation-stack.md) for merge order and
 remaining desktop acceptance. No PR in this work has been merged or released.
 
-`omarchy-widget reveal` is the separate temporary glance action; Escape or
-`omarchy-widget dismiss-reveal` ends it. The lease expires after 30 seconds.
-See [reveal](docs/reveal.md) before desktop testing: focus/stacking/lock acceptance
-is still outstanding.
+Quick reveal is **disabled in the default build**. An explicit
+`experimental-reveal` Cargo feature retains the prototype and policy tests.
+For controlled desktop experiments only, install with
+`OMARCHY_WIDGET_EXPERIMENTAL_REVEAL=1 bash install-local --update`.
+The prototype restarts package runners on entry/exit and expires after 30 seconds;
+its latency, focus, lock and suspend behaviour are unverified. See [reveal](docs/reveal.md).
+Weather is an independent, bounded experimental capability; enabling it does not
+enable reveal or grant renderer network access.
 
 Create a package with `omarchy-widget new PATH ID NAME`. The
 [authoring SDK](docs/authoring-sdk.md) covers the starter, validator, previews,
@@ -169,3 +180,12 @@ lifecycle, settings schemas and external-author workflow. Install
 or revokes weather access. The same tab shows runner health and offers package
 restart, disable/enable and compatible rollback. Restart explicitly discards any
 unapplied draft belonging to that package; updates wait for the editor to close.
+
+## Combined review corrections
+
+The follow-up to the two 16 September reviews is recorded in
+[combined remediation](docs/combined-review-remediation.md). The manager exposes
+pending settings with a Cancel action, and layout errors offer Repair saved layout.
+Repair saves the original bytes before quarantining invalid placements or runtime
+controls; it never silently resets a whole registry. Settings export/restore remains
+separate from complete data/state backup.

@@ -69,7 +69,12 @@ function draft() { return JSON.stringify(settingsContext.draftSettings); }
     assert call(c,'action','start');spin(lambda:not call(c,'pending'));started=placement(first);assert started['settings']['endsAt']>0;assert placement(second)==second_before
     assert call(c,'action','pause');spin(lambda:not call(c,'pending'));paused=placement(first);assert paused['settings']['endsAt']==0
     assert call(c,'action','resume');spin(lambda:not call(c,'pending'));resumed=placement(first);assert resumed['settings']['endsAt']>0
-    gear=window.findChild(QObject,'settings-gear');assert gear;gear.forceActiveFocus();QTest.keyClick(window,Qt.Key.Key_Return);spin(lambda:call(c,'current')==first);draft=call(c,'draft')
+    gear=window.findChild(QObject,'settings-gear');assert gear;frame=window.findChild(QObject,'widget-frame');frame.forceActiveFocus()
+    for _ in range(20):
+        QTest.keyClick(window,Qt.Key.Key_Tab)
+        if gear.property('activeFocus'):break
+    assert gear.property('activeFocus'),'Gear cannot be reached by Tab'
+    QTest.keyClick(window,Qt.Key.Key_Return);spin(lambda:call(c,'current')==first);draft=call(c,'draft')
     QMetaObject.invokeMethod(gear,'clicked');spin(lambda:not call(c,'pending'));assert call(c,'draft')==draft
     cancel=window.findChild(QObject,'cancel-button');QMetaObject.invokeMethod(cancel,'clicked');spin(lambda:not call(c,'pending'))
     cli('hide',first);cli('add',first);cli('update',package);cli('rollback',id)
