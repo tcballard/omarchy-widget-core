@@ -1,6 +1,7 @@
 mod grid;
 mod island;
 mod resources;
+mod reveal;
 mod workspaces;
 use serde_json::{json, Value};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -451,7 +452,23 @@ impl Registry {
             runtime = json!({"shown":true,"editing":false,"managerOpen":false});
         }
         match method {
+            "reveal" => {
+                if !runtime["edit"].is_null() {
+                    return Err("Finish settings before revealing widgets".into());
+                }
+                let active =
+                    reveal::active(runtime["revealUntil"].as_u64().unwrap_or(0), reveal::now());
+                runtime["revealUntil"] = json!(if active {
+                    0
+                } else {
+                    reveal::now() + reveal::MAX_MS
+                });
+                runtime["editing"] = json!(false);
+                runtime["managerOpen"] = json!(false);
+            }
+            "dismiss-reveal" => runtime["revealUntil"] = json!(0),
             "manage" => {
+                runtime["revealUntil"] = json!(0);
                 runtime["managerOpen"] = json!(!runtime["managerOpen"].as_bool().unwrap_or(false))
             }
             "close-manager" => runtime["managerOpen"] = json!(false),
@@ -474,6 +491,11 @@ impl Registry {
     }
     fn snapshot(&self) -> Result<Value> {
         let mut l = self.layout()?;
+        let active = reveal::active(
+            l["runtime"]["revealUntil"].as_u64().unwrap_or(0),
+            reveal::now(),
+        );
+        l["runtime"]["revealing"] = json!(active);
         let desktop = workspaces::snapshot();
         if grid::migrate(&mut l["placements"], &desktop) {
             // Polling must not terminate the supervisor when an external writer holds the lock.
@@ -895,6 +917,12 @@ fn run(args: &[String]) -> Result<Value> {
         let mut layout = r.layout()?;
         if !layout["placements"][&args[1]].is_object() {
             return Err("Add the widget before editing it".into());
+        }
+        if reveal::active(
+            layout["runtime"]["revealUntil"].as_u64().unwrap_or(0),
+            reveal::now(),
+        ) {
+            return Err("Dismiss reveal before opening settings".into());
         }
         layout["runtime"]["edit"] =
             json!({"instance":args[1],"serial":layout["revision"].as_u64().unwrap_or(0)+1});
@@ -1552,5 +1580,26 @@ mod tests {
         let before = r.layout().unwrap();
         assert!(r.control("exec").is_err());
         assert_eq!(r.layout().unwrap(), before);
+    }
+    #[test]
+    fn reveal_toggles_without_changing_layout_or_hidden_preferences() {
+        let t = Temp::new();
+        let source = t.0.join("source");
+        fixture(&source);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&source).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        r.control("hide-all").unwrap();
+        let before = r.layout().unwrap()["placements"].clone();
+        r.control("reveal").unwrap();
+        let state = r.snapshot().unwrap();
+        assert_eq!(state["runtime"]["revealing"], true);
+        assert_eq!(state["runtime"]["shown"], false);
+        r.control("reveal").unwrap();
+        assert_eq!(r.snapshot().unwrap()["runtime"]["revealing"], false);
+        assert_eq!(r.layout().unwrap()["placements"], before);
     }
 }

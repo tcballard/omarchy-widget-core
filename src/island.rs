@@ -149,6 +149,9 @@ fn serve(listener: &UnixListener, r: &Registry, package: &str, source: &Path) ->
 // wl-mitm's ask hook is a deterministic policy decision, not a user prompt.
 // Denials use a fatal Wayland error; never silently discard object creation.
 pub fn wayland_policy(args: &[String], message: &str) -> Result<Value> {
+    policy(args, message, reveal::permitted())
+}
+fn policy(args: &[String], message: &str, revealing: bool) -> Result<Value> {
     if message.len() > REQUEST_LIMIT as usize {
         return Err("Wayland policy payload too large".into());
     }
@@ -158,8 +161,12 @@ pub fn wayland_policy(args: &[String], message: &str) -> Result<Value> {
         .map(String::as_str)
         .zip(args.get(2).map(String::as_str))
     {
-        Some(("zwlr_layer_shell_v1", "get_layer_surface")) => v["layer"] == 1,
-        Some(("zwlr_layer_surface_v1", "set_layer")) => v["layer"] == 1,
+        Some(("zwlr_layer_shell_v1", "get_layer_surface")) => {
+            v["layer"] == 1 || (revealing && v["layer"] == 3)
+        }
+        Some(("zwlr_layer_surface_v1", "set_layer")) => {
+            v["layer"] == 1 || (revealing && v["layer"] == 3)
+        }
         Some(("zwlr_layer_surface_v1", "set_exclusive_zone")) => v["zone"] == 0 || v["zone"] == -1,
         Some(("zwlr_layer_surface_v1", "set_keyboard_interactivity")) => {
             v["keyboard_interactivity"] == 0 || v["keyboard_interactivity"] == 2
@@ -175,6 +182,7 @@ pub fn wayland_policy(args: &[String], message: &str) -> Result<Value> {
 
 struct Runner {
     source: PathBuf,
+    reveal_until: u64,
     directory: PathBuf,
     listener: UnixListener,
     unit: String,
@@ -206,10 +214,12 @@ fn launch(
     package: &str,
     source: &Path,
     upstream: &Path,
+    reveal_until: u64,
 ) -> Result<Runner> {
     let directory = runtime_directory(base, package);
     fs::create_dir(&directory).map_err(err)?;
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).map_err(err)?;
+    fs::write(directory.join("reveal-lease"), reveal_until.to_string()).map_err(err)?;
     let socket = directory.join("broker");
     let listener = UnixListener::bind(&socket).map_err(err)?;
     listener.set_nonblocking(true).map_err(err)?;
@@ -242,6 +252,7 @@ fn launch(
         .map_err(err)?;
     Ok(Runner {
         source: source.into(),
+        reveal_until,
         directory,
         listener,
         unit,
@@ -278,6 +289,11 @@ pub fn supervise(config: &Path) -> Result<Value> {
             }
             if Instant::now() >= next_scan {
                 let snapshot = r.snapshot()?;
+                let reveal_until = if snapshot["runtime"]["revealing"] == true {
+                    snapshot["runtime"]["revealUntil"].as_u64().unwrap_or(0)
+                } else {
+                    0
+                };
                 let edit = snapshot["runtime"]["edit"]["instance"]
                     .as_str()
                     .unwrap_or("");
@@ -293,7 +309,9 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         );
                     }
                 }
-                runners.retain(|id, runner| wanted.get(id) == Some(&runner.source));
+                runners.retain(|id, runner| {
+                    wanted.get(id) == Some(&runner.source) && runner.reveal_until == reveal_until
+                });
                 for (id, source) in wanted {
                     if runners.contains_key(&id) {
                         continue;
@@ -303,7 +321,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
                             continue;
                         }
                     }
-                    match launch(config, &base, &id, &source, &upstream) {
+                    match launch(config, &base, &id, &source, &upstream, reveal_until) {
                         Ok(runner) => {
                             runners.insert(id, runner);
                         }
@@ -325,7 +343,13 @@ pub fn supervise(config: &Path) -> Result<Value> {
             let mut dead = Vec::new();
             for (id, runner) in &mut runners {
                 if runner.child.try_wait().map_err(err)?.is_some() {
-                    dead.push(id.clone());
+                    if runner.reveal_until == 0
+                        || reveal::active(runner.reveal_until, reveal::now())
+                    {
+                        dead.push(id.clone());
+                    } else {
+                        next_scan = Instant::now();
+                    }
                     continue;
                 }
                 serve(&runner.listener, &r, id, &runner.source)?;
@@ -480,5 +504,26 @@ mod tests {
         r.deploy(&base.join("io.test.a"), true).unwrap();
         assert!(call(&["list"]).is_err());
         fs::remove_dir_all(base).unwrap();
+    }
+    #[test]
+    fn reveal_only_adds_temporary_overlay_authority() {
+        for request in ["get_layer_surface", "set_layer"] {
+            let interface = if request == "set_layer" {
+                "zwlr_layer_surface_v1"
+            } else {
+                "zwlr_layer_shell_v1"
+            };
+            let args = ["wayland-policy", interface, request].map(str::to_owned);
+            assert!(policy(&args, r#"{"layer":3}"#, true).is_ok());
+            assert!(policy(&args, r#"{"layer":3}"#, false).is_err());
+            assert!(policy(&args, r#"{"layer":2}"#, true).is_err());
+        }
+        let args = [
+            "wayland-policy",
+            "zwlr_layer_surface_v1",
+            "set_keyboard_interactivity",
+        ]
+        .map(str::to_owned);
+        assert!(policy(&args, r#"{"keyboard_interactivity":1}"#, true).is_err());
     }
 }

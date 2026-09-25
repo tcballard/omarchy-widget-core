@@ -15,6 +15,7 @@ args=(--unshare-all --die-with-parent --new-session --cap-drop ALL --clearenv
       --setenv XDG_CACHE_HOME /tmp/cache --setenv XDG_CONFIG_HOME /tmp/config
       --setenv XDG_RUNTIME_DIR /run/widget-core
       --setenv QT_QPA_PLATFORM wayland --setenv QT_QUICK_BACKEND software
+      --setenv OMARCHY_WIDGET_REVEAL "${OMARCHY_WIDGET_REVEAL:-0}"
       --setenv OMARCHY_WIDGET_ROLE runner --setenv OMARCHY_WIDGET_SANDBOX package-offline-v2
       --setenv OMARCHY_WIDGET_BROKER /run/widget-core/broker --chdir /app)
 for item in Host.qml shell.qml qml Commons Ui; do

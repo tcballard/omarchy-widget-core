@@ -73,6 +73,7 @@ with tempfile.TemporaryDirectory() as directory:
     service=(root/'Host.qml').read_text().split('    function screenFor(',1)[0]
     body=service[service.index('Item {'):].replace('id: root','id: controller; objectName:"controller"',1)
     # Production expressions refer to root; keep its id and use controller objectName.
+    body=body.replace('Quickshell.env("OMARCHY_WIDGET_REVEAL") === "1"', 'false')
     body=body.replace('id: controller;','id: root;')
     # The harness supplies the runner role; the real Quickshell environment is not present.
     body=body.replace('Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"', 'false')

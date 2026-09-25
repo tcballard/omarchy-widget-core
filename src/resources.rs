@@ -141,11 +141,22 @@ impl Drop for Children {
 pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
     // Fail closed before any package code or protocol parser is started.
     verify().map_err(|e| format!("Package resource preflight failed: {e}"))?;
+    let reveal_until = reveal::lease(&directory.join("reveal-lease"));
+    let deadline = std::time::Instant::now()
+        + Duration::from_millis(
+            reveal_until
+                .saturating_sub(reveal::now())
+                .min(reveal::MAX_MS),
+        );
     let mut children = Children(Vec::new());
     children.0.push(
         Command::new(config.join("bin/wl-mitm"))
             .arg(directory.join("wayland.toml"))
             .env("TOKIO_WORKER_THREADS", "1")
+            .env(
+                "OMARCHY_WIDGET_REVEAL_LEASE",
+                directory.join("reveal-lease"),
+            )
             .stdin(Stdio::null())
             .spawn()
             .map_err(err)?,
@@ -174,11 +185,18 @@ pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
             .arg(source)
             .arg(directory.join("broker"))
             .arg(display)
+            .env(
+                "OMARCHY_WIDGET_REVEAL",
+                if reveal_until > 0 { "1" } else { "0" },
+            )
             .stdin(Stdio::null())
             .spawn()
             .map_err(err)?,
     );
     loop {
+        if reveal_until > 0 && std::time::Instant::now() >= deadline {
+            return Err("Reveal lease ended".into());
+        }
         for child in &mut children.0 {
             if let Some(status) = child.try_wait().map_err(err)? {
                 return Err(format!("Island child exited: {status}"));
