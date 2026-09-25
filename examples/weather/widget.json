@@ -1,0 +1,1 @@
+{"schemaVersion":2,"coreApi":2,"kind":"desktop-widget","id":"io.github.tcballard.weather-example","name":"Weather example","version":"0.1.0","entryPoint":"View.qml","settingsEntryPoint":"Settings.qml","families":["small","medium","large"],"defaultFamily":"small","defaults":{"latitude":51.5,"longitude":-0.12,"label":"London"},"capabilities":["weather"],"refresh":"weather"}

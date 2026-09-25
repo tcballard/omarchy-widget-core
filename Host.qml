@@ -26,6 +26,7 @@ Item {
     property bool shown: true
     property bool editing: false
     property bool managerOpen: false
+    property var weatherStates: ({})
     property var saveStates: ({})
     property var placementErrors: ({})
     property string configuring: ""
@@ -83,6 +84,11 @@ Item {
         id: operation
         helper: root.helper
         onCompleted: function(request,success,response,message) {
+            if(request.args[0]==="weather") {
+                var weather=Object.assign({},root.weatherStates);
+                weather[request.args[1]]=success ? response : {state:"unavailable",data:null,error:message};
+                root.weatherStates=weather; return;
+            }
             root.error=message;
             if(request.token) {
                 var id=request.token.instance;
@@ -185,6 +191,7 @@ Item {
             onCreateRequested: function(id, family) { root.execute(["create",id,family]); }
             onDuplicateRequested: function(id) { root.execute(["duplicate",id]); }
             onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
+            onWeatherPermissionRequested: function(id, allowed) { root.execute(["weather-permission",id,allowed ? "allow" : "deny"]); }
             onUninstallRequested: function(id, policy) { root.execute(["uninstall",id,policy]); }
             onArrangeRequested: { root.control("arrange"); root.shown = true; root.managerOpen = false;root.control("close-manager"); }
         }
@@ -208,8 +215,8 @@ Item {
             objectName: "settings-panel"
             anchors.fill: parent
             busy: !!(root.saveStates[root.configuring] && root.saveStates[root.configuring].saving)
-            canSave: settingsLoader.status===Loader.Ready
-            error: root.editorError || (settingsLoader.status===Loader.Error ? "The widget settings editor could not load. Cancel and check the package." : "") || (root.saveStates[root.configuring] ? root.saveStates[root.configuring].error : "")
+            canSave: settingsLoader.status===Loader.Ready && !!settingsLoader.item && !(settingsLoader.item.validationError || "")
+            error: root.editorError || (settingsLoader.item ? settingsLoader.item.validationError || "" : "") || (settingsLoader.status===Loader.Error ? "The widget settings editor could not load. Cancel and check the package." : "") || (root.saveStates[root.configuring] ? root.saveStates[root.configuring].error : "")
             onCancelRequested: root.closeSettings()
             onSaveRequested: if(canSave) root.save(root.configuring,settingsContext.draftSettings,settingsContext.revision)
             Loader { id:settingsLoader; anchors.fill:parent; active:root.configuring!=="" }
@@ -285,10 +292,15 @@ Item {
                 if(!target)return false;
                 return root.execute(["place", modelData, JSON.stringify({column:target.column,row:target.row,monitor:monitorName,size:size})]);
             }
-            QtObject {
+            Core.Lifecycle {
                 id: context
                 readonly property var settings: window.config.settings
-                readonly property bool active: window.visible
+                active: window.visible
+                onSuspending: inputRequested=false
+                readonly property var weather: root.weatherStates[window.modelData] || ({state:"loading",data:null,error:""})
+                function requestWeather(latitude,longitude) {
+                    return active && root.execute(["weather",window.modelData,String(latitude),String(longitude)]);
+                }
                 readonly property var theme: Color
                 readonly property var metrics: Style
                 readonly property int api: 2
@@ -337,7 +349,7 @@ Item {
                 Loader {
                     id: content
                     anchors.fill: parent
-                    active: window.visible
+                    active: true
                     readonly property string entryUrl: window.entry ? "file://" + window.entry.directory.split("/").map(encodeURIComponent).join("/") + "/" + window.metadata.entryPoint.split("/").map(encodeURIComponent).join("/") : ""
                     onEntryUrlChanged: if(entryUrl) setSource(entryUrl,{widgetContext:context})
                     Component.onCompleted: if(entryUrl) setSource(entryUrl,{widgetContext:context})
