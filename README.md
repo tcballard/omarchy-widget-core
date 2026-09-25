@@ -61,7 +61,18 @@ Core uses `$XDG_DATA_HOME/omarchy/widgets` and `$XDG_STATE_HOME/omarchy/widgets`
 
 Settings saves complete only after the helper commits state. A revision conflict retains the editor draft and reports an error. The writer uses a kernel file lock released on process exit, atomic replacement and filesystem sync. Package versions remain on disk for rollback; abandoned versions are not automatically garbage-collected in this release.
 
-`omarchy-widget hide INSTANCE_ID` keeps settings. `remove PACKAGE_ID` unregisters the package and removes its instance settings; retained code is not securely erased. `duplicate INSTANCE_ID` creates independently configurable instances. `stop`, `start`, `restart` and `hide-all` control Core and its widget runners.
+`omarchy-widget hide INSTANCE_ID` keeps settings and position. `remove-instance INSTANCE_ID`
+deletes only that instance. `uninstall PACKAGE_ID keep` unregisters the package and
+keeps its instances hidden for a later reinstall; `uninstall PACKAGE_ID delete`
+also deletes its instances. Cached code versions remain on disk; uninstall does
+not promise disk reclamation or secure erasure. The legacy `remove PACKAGE_ID`
+command remains an alias for uninstall with settings deletion.
+
+`create PACKAGE_ID small|medium|large` adds a fresh instance from defaults;
+`duplicate INSTANCE_ID` copies an existing instance's settings into an independent
+identity. `add INSTANCE_ID` shows a hidden instance. Legacy `add PACKAGE_ID` still
+creates or shows that package's original placement. `stop`, `start`, `restart` and
+`hide-all` control Core and its widget runners.
 
 To uninstall the runtime while preserving widget data:
 
@@ -112,3 +123,28 @@ Follow the [widget authoring standard](docs/widget-authoring.md) alongside the A
 Small, Medium and Large occupy 1×1, 2×1 and 2×2 cells. Core inherits global Hyprland gaps, border size and rounding; disabled widgets release their cells. Arrange mode previews footprints and rejects occupied drops. Different numbered workspaces can reuse cells; an all-workspace instance reserves them everywhere.
 
 Preferred monitor/cell coordinates survive monitor removal and resolution/gap changes. Core temporarily finds another available slot or marks the instance unplaced, then restores the preference when available. See [layout/API details](docs/grid-layout.md) and [verification](docs/grid-verification.md). Core remains v0.0.2; real desktop acceptance is pending.
+
+
+## Widgets manager (development)
+
+Open `omarchy-widget manage` or **Super+Space → Widgets**. **Available** lists
+installed widget types once each, with size choices, a preview and Add widget.
+Add starts from defaults; it does not replace or copy an existing instance.
+This is a local installed-package gallery, not an online store.
+
+**Your widgets** lists individual instances, their monitor/workspace, size and
+visibility. Configure, Arrange, Duplicate, Hide/Show and Remove act from here.
+Remove asks before deleting one instance. Uninstall offers an explicit choice to
+keep or delete all of a package's instance settings. Kept instances remain visible
+in the manager as uninstalled and can be removed individually; reinstall leaves
+them hidden until Show is chosen.
+
+Packages can provide bounded static PNG previews for supported families. Without
+an image, Core labels the grid footprint as a size preview. Third-party widget
+QML is never loaded by the manager to generate a preview. Broken packages remain
+listed with an error and an Uninstall action.
+
+See [manager verification](docs/manager-verification.md) and the
+[implementation stack](docs/implementation-stack.md). Portable Qt tests exercise
+real mouse actions through the production controller and Rust registry. Live
+Omarchy focus, keyboard navigation, scaling and monitor acceptance remain pending.
