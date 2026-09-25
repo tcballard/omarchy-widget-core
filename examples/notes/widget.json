@@ -16,6 +16,11 @@
   "defaults": {
     "note": "Click to edit this note."
   },
+  "previews": {
+    "small": "previews/small.png",
+    "medium": "previews/medium.png",
+    "large": "previews/large.png"
+  },
   "requires": [
     "acknowledged-actions",
     "frame-settings"

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import qs.Commons
 
 FocusScope {
@@ -17,6 +18,13 @@ FocusScope {
     property string error: ""
     property string workspaceError: ""
     property string view: "instances"
+    property string search: ""
+    property string installPath: ""
+    property bool installOpen: false
+    readonly property var filteredCatalog: catalog.filter(function(e) {
+        var query=root.search.trim().toLowerCase();
+        return !query || (e.manifest.name+" "+e.packageId).toLowerCase().indexOf(query)>=0;
+    })
     property var confirmation: null
     readonly property var instances: entries.filter(function(e) { return !!e.placement; }).concat(retained.map(function(e) {
         return Object.assign({},e,{uninstalled:true,manifest:{id:e.packageId,name:e.name || e.packageId}});
@@ -28,6 +36,7 @@ FocusScope {
     signal arrangeRequested()
     signal toggleRequested(string id, bool enabled)
     signal createRequested(string packageId, string family)
+    signal installRequested(string path)
     signal duplicateRequested(string id)
     signal removeRequested(string id)
     signal uninstallRequested(string packageId, string policy)
@@ -59,6 +68,14 @@ FocusScope {
     function previewUrl(entry,family) {
         var path=entry.manifest.previews && entry.manifest.previews[family];
         return path ? "file://" + entry.directory.split("/").concat(path.split("/")).map(encodeURIComponent).join("/") : "";
+    }
+    FolderDialog {
+        id:packageFolder
+        title:"Choose a widget package folder"
+        onAccepted: {
+            root.installPath=decodeURIComponent(selectedFolder.toString().replace(/^file:\/\//,""));
+            root.installOpen=true;
+        }
     }
 
     property var instanceDetails: ({})
@@ -106,6 +123,33 @@ FocusScope {
             ManagerButton { text:"Cancel settings"; enabled:!root.busy; onClicked:root.cancelEditorRequested(root.pendingEditor.instance,String(root.pendingEditor.serial)) }
         }
         ManagerButton { text:"Repair saved layout"; visible:root.repairRequired; enabled:!root.busy; onClicked:root.repairRequested() }
+        RowLayout {
+            visible:root.view==="available"; Layout.fillWidth:true; spacing:Style.space(8)
+            Rectangle {
+                Layout.fillWidth:true; Layout.preferredHeight:Style.space(38)
+                color:root.surface; radius:Style.space(8); border.width:1; border.color:root.hairline
+                TextInput {
+                    id:searchInput; objectName:"widget-search"
+                    anchors.fill:parent; anchors.margins:Style.space(9)
+                    color:Color.foreground; font.family:Style.font.family; font.pixelSize:Style.font.body
+                    selectByMouse:true; activeFocusOnTab:true; clip:true
+                    Accessible.name:"Search widgets"
+                    onTextChanged:root.search=text
+                }
+                Label { anchors.verticalCenter:parent.verticalCenter; anchors.left:parent.left; anchors.leftMargin:Style.space(9); text:"Search widgets"; color:Color.muted; visible:!searchInput.text && !searchInput.activeFocus }
+            }
+            ManagerButton { text:"Install widget…"; enabled:!root.busy; onClicked: { root.installOpen=true; packageFolder.open(); } }
+        }
+        RowLayout {
+            visible:root.view==="available" && root.installOpen; Layout.fillWidth:true; spacing:Style.space(8)
+            Label { text:"Package folder"; color:Color.muted }
+            TextInput {
+                Layout.fillWidth:true; text:root.installPath; onTextEdited:root.installPath=text
+                color:Color.foreground; font.family:Style.font.family; selectByMouse:true; activeFocusOnTab:true
+                Accessible.name:"Widget package folder path"
+            }
+            ManagerButton { text:"Install package"; enabled:!root.busy && root.installPath.length>0; onClicked:root.installRequested(root.installPath) }
+        }
         ListView {
             id: available
             objectName:"available-list"
@@ -113,7 +157,7 @@ FocusScope {
             Layout.fillWidth:true; Layout.fillHeight:true; clip:true; spacing:Style.space(12)
             cacheBuffer:100000
             function ensureVisible(item) { var p=item.mapToItem(contentItem,0,0); if(p.y<contentY)contentY=p.y;else if(p.y+item.height>contentY+height)contentY=p.y+item.height-height; }
-            model:root.catalog
+            model:root.filteredCatalog
             delegate: Rectangle {
                 id:packageCard
                 required property var modelData
@@ -170,7 +214,7 @@ FocusScope {
                     }
                 }
             }
-            Label { anchors.centerIn:parent; width:parent.width-Style.space(48); visible:!root.catalog.length; text:"No widgets available yet\nInstall a widget package to add it here."; font.pixelSize:Style.space(14); color:Color.muted; wrapMode:Text.Wrap; horizontalAlignment:Text.AlignHCenter }
+            Label { anchors.centerIn:parent; width:parent.width-Style.space(48); visible:!root.filteredCatalog.length; text:root.search ? "No matching widgets" : "No widgets available yet\nInstall a widget package to add it here."; font.pixelSize:Style.space(14); color:Color.muted; wrapMode:Text.Wrap; horizontalAlignment:Text.AlignHCenter }
         }
         ListView {
             id:instancesList
