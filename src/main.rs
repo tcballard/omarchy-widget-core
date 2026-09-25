@@ -1,3 +1,4 @@
+mod declarative;
 mod grid;
 mod island;
 mod resources;
@@ -79,14 +80,22 @@ fn manifest(dir: &Path) -> Result<Value> {
     {
         return Err("Version must be numeric major.minor.patch".into());
     }
-    let entry = v["entryPoint"].as_str().unwrap_or("");
-    if !safe_relative(entry) || !entry.ends_with(".qml") {
-        return Err("Unsafe QML entry point".into());
-    }
     let canonical = dir.canonicalize().map_err(err)?;
-    let target = dir.join(entry).canonicalize().map_err(err)?;
-    if !target.starts_with(&canonical) || !target.is_file() {
-        return Err("Entry point escapes package".into());
+    if declarative::is(&v) {
+        declarative::contract(&v)?;
+    } else {
+        if v.get("renderer").is_some_and(|x| x != "qml") {
+            return Err("Unknown renderer".into());
+        }
+        let entry = v["entryPoint"].as_str().unwrap_or("");
+        if !safe_relative(entry) || !entry.ends_with(".qml") {
+            return Err("Unsafe QML entry point".into());
+        }
+        let canonical = dir.canonicalize().map_err(err)?;
+        let target = dir.join(entry).canonicalize().map_err(err)?;
+        if !target.starts_with(&canonical) || !target.is_file() {
+            return Err("Entry point escapes package".into());
+        }
     }
     if !v["defaults"].is_object() || serde_json::to_vec(&v["defaults"]).map_err(err)?.len() > 8192 {
         return Err("Defaults must be an object up to 8 KiB".into());
@@ -183,6 +192,7 @@ fn manifest(dir: &Path) -> Result<Value> {
                 "shared-weather",
                 "frame-settings",
                 "command-dependencies",
+                "declarative-v1",
             ]
             .iter()
             .any(|s| feature == s)
@@ -1415,6 +1425,9 @@ fn run(args: &[String]) -> Result<Value> {
     if let Ok(socket) = env::var("OMARCHY_WIDGET_BROKER") {
         return island::client(&socket, args);
     }
+    if cmd == "clock-times" && args.len() == 2 {
+        return declarative::clock_times(&args[1]);
+    }
     if cmd == "wayland-policy" {
         return island::wayland_policy(args, &env::var("WL_MITM_MSG_JSON").map_err(err)?);
     }
@@ -1451,12 +1464,12 @@ fn run(args: &[String]) -> Result<Value> {
     if cmd == "weather-permission" && args.len() == 3 {
         return weather::grant(&Registry::from_env()?, &args[1], &args[2]);
     }
-    if cmd == "new" && args.len() == 4 {
-        return sdk::scaffold(Path::new(&args[1]), &args[2], &args[3]);
+    if (cmd == "new" || cmd == "new-qml") && args.len() == 4 {
+        return sdk::scaffold(Path::new(&args[1]), &args[2], &args[3], cmd == "new-qml");
     }
     if cmd == "help" {
         return Ok(
-            json!({"commands":["repair","show INSTANCE_ID","export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["repair","show INSTANCE_ID","export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME (declarative)","new-qml PATH ID NAME (isolated QML)","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
         );
     }
     let required = match cmd {
@@ -1729,7 +1742,7 @@ mod tests {
     fn api_three_validates_required_features_and_rejects_future_contracts() {
         let t = Temp::new();
         let src = t.0.join("source");
-        sdk::scaffold(&src, "io.example.api", "API").unwrap();
+        sdk::scaffold(&src, "io.example.api", "API", true).unwrap();
         let mut m = read_json(&src.join("widget.json"), 16384).unwrap();
         assert_eq!(m["coreApi"], 3);
         validate(&src).unwrap();
@@ -1812,7 +1825,7 @@ mod tests {
     fn manager_can_recover_customised_unplaced_large_instance() {
         let t = Temp::new();
         let src = t.0.join("source");
-        sdk::scaffold(&src, "io.example.test", "Test").unwrap();
+        sdk::scaffold(&src, "io.example.test", "Test", true).unwrap();
         let r = Registry {
             data: t.0.join("data"),
             state: t.0.join("state"),

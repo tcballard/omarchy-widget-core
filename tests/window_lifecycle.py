@@ -17,7 +17,7 @@ visible = next(line.strip().split('visible: ',1)[1] for line in source.splitline
                if 'visible: (root.shown || root.revealRunner)' in line)
 selected = next(line.strip() for line in source.splitlines() if 'readonly property var selectedScreen:' in line)
 exit_condition = next(line.strip().split('running:',1)[1] for line in source.splitlines()
-                      if 'running:root.managerRole && root.snapshotReady' in line)
+                      if 'running:root.managerRole && !root.declarativeWanted' in line)
 app = QGuiApplication([])
 with tempfile.TemporaryDirectory() as temp:
     path = Path(temp)/'Test.qml'
@@ -32,6 +32,8 @@ Item {
     property bool monitorAvailable: true
     function screenFor(name) { return monitorAvailable ? monitor : null; }
     function clearPending() { pendingClose=null; }
+    property bool declarativeWanted: false
+    property string configuring: ""
     property bool managerRole: true
     property bool snapshotReady: false
     property bool managerOpen: false
@@ -73,7 +75,7 @@ Item {
     QTest.qWait(300)
     assert obj.property('quitCount')==0, 'Must receive first snapshot before exiting'
     obj.setProperty('snapshotReady',True)
-    for reason in ['queueBusy','managerOpen','editing','revealing']:
+    for reason in ['queueBusy','managerOpen','editing','revealing','declarativeWanted']:
         obj.setProperty(reason,True);QTest.qWait(300)
         assert obj.property('quitCount')==0, reason
         obj.setProperty(reason,False)

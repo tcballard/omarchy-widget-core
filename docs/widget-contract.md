@@ -1,3 +1,5 @@
+> For data-only widgets, use the [declarative v1 contract](declarative-widgets.md). The QML entry-point contract below remains available as the advanced isolated renderer.
+
 # Widget contract · Core v0.0.2
 
 Experimental API 3. See [compatibility.md](compatibility.md). Package version, manifest schema version and Core API are separate numbers. The release version reset does not reduce the API number.

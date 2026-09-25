@@ -368,6 +368,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
     let mut manager: Option<Child> = None;
     let mut manager_attempts = 0;
     let mut manager_retry = Instant::now();
+    let mut shared_generation = Value::Null;
+    let mut manager_requested = false;
     let mut runners: BTreeMap<String, Runner> = BTreeMap::new();
     let mut dead_editors: BTreeMap<String, String> = BTreeMap::new();
     let mut failures: BTreeMap<String, (u32, Instant)> = BTreeMap::new();
@@ -378,6 +380,15 @@ pub fn supervise(config: &Path) -> Result<Value> {
             if let Some(child) = manager.as_mut() {
                 if child.try_wait().map_err(err)?.is_some() {
                     manager = None;
+                    if let Ok(snapshot) = r.snapshot() {
+                        for entry in snapshot["catalog"].as_array().into_iter().flatten() {
+                            if declarative::is(&entry["manifest"]) {
+                                if let Some(id) = entry["packageId"].as_str() {
+                                    let _ = r.clear_dead_editor(Some(id));
+                                }
+                            }
+                        }
+                    }
                     manager_retry = Instant::now() + Duration::from_secs(5);
                 }
             }
@@ -397,6 +408,27 @@ pub fn supervise(config: &Path) -> Result<Value> {
                         continue;
                     }
                 };
+                // Explicit package restart/update or a fresh manager request also
+                // recovers a shared renderer that exhausted its crash budget.
+                let generation = json!(snapshot["catalog"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|entry| declarative::is(&entry["manifest"]))
+                    .map(|entry| json!([
+                        entry["packageId"],
+                        entry["directory"],
+                        snapshot["runtime"]["packageControls"]
+                            [entry["packageId"].as_str().unwrap_or("")]["serial"]
+                    ]))
+                    .collect::<Vec<_>>());
+                let requested = snapshot["runtime"]["managerOpen"] == true;
+                if generation != shared_generation || (requested && !manager_requested) {
+                    manager_attempts = 0;
+                    manager_retry = Instant::now();
+                    shared_generation = generation;
+                }
+                manager_requested = requested;
                 if manager_required(&snapshot) {
                     if manager.is_none() && manager_attempts < 3 && Instant::now() >= manager_retry
                     {
@@ -430,7 +462,8 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     .unwrap_or("");
                 let mut wanted = BTreeMap::new();
                 for entry in snapshot["installed"].as_array().ok_or("Invalid snapshot")? {
-                    if (entry["placement"]["enabled"] == true || entry["instanceId"] == edit)
+                    if !declarative::is(&entry["manifest"])
+                        && (entry["placement"]["enabled"] == true || entry["instanceId"] == edit)
                         && snapshot["runtime"]["packageControls"]
                             [entry["packageId"].as_str().unwrap_or("")]["disabled"]
                             != true
@@ -505,6 +538,10 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     let count = failures.get(id).map_or(0, |v| v.0);
                     let state = if entry["packageDisabled"] == true {
                         "disabled"
+                    } else if declarative::is(&entry["manifest"]) && manager.is_some() {
+                        "running"
+                    } else if declarative::is(&entry["manifest"]) && manager_attempts >= 3 {
+                        "failed"
                     } else if runners.contains_key(id) {
                         "running"
                     } else if dead_editors.contains_key(id) {
@@ -585,6 +622,19 @@ fn manager_required(snapshot: &Value) -> bool {
     ["managerOpen", "editing", "revealing"]
         .iter()
         .any(|key| snapshot["runtime"][key] == true)
+        || snapshot["installed"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|entry| {
+                declarative::is(&entry["manifest"])
+                    && ((entry["placement"]["enabled"] == true
+                        && snapshot["runtime"]["shown"] != false)
+                        || entry["instanceId"] == snapshot["runtime"]["edit"]["instance"])
+                    && snapshot["runtime"]["packageControls"]
+                        [entry["packageId"].as_str().unwrap_or("")]["disabled"]
+                        != true
+            })
 }
 
 // Linux poll wakes immediately for broker requests; housekeeping remains at 1 Hz.
@@ -628,6 +678,23 @@ fn runner_health(state: &str, failures: u32, recovery_error: Option<&str>) -> Va
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn declarative_widgets_share_trusted_renderer() {
+        let mut snapshot = json!({"runtime":{},"installed":[{"instanceId":"clock-a","packageId":"clock","manifest":{"renderer":"declarative"},"placement":{"enabled":true}}]});
+        assert!(manager_required(&snapshot));
+        snapshot["runtime"]["shown"] = json!(false);
+        assert!(!manager_required(&snapshot));
+        snapshot["runtime"]["shown"] = json!(true);
+        snapshot["runtime"]["packageControls"]["clock"]["disabled"] = json!(true);
+        assert!(!manager_required(&snapshot));
+        snapshot["runtime"]["packageControls"]["clock"]["disabled"] = json!(false);
+        snapshot["installed"][0]["placement"]["enabled"] = json!(false);
+        assert!(!manager_required(&snapshot));
+        snapshot["runtime"]["edit"] = json!({"instance":"clock-a"});
+        assert!(manager_required(&snapshot));
+        snapshot["installed"][0]["manifest"]["renderer"] = json!("qml");
+        assert!(!manager_required(&snapshot));
+    }
     #[test]
     fn manager_is_only_required_for_trusted_surfaces() {
         assert!(!manager_required(
@@ -821,7 +888,7 @@ mod tests {
             state: base.join("state"),
         };
         let src = base.join("source");
-        sdk::scaffold(&src, "io.example.authority", "Authority").unwrap();
+        sdk::scaffold(&src, "io.example.authority", "Authority", true).unwrap();
         r.install(&src).unwrap();
         r.placement("io.example.authority", "add", None).unwrap();
         let source = r
@@ -930,7 +997,7 @@ mod tests {
             state: base.join("state"),
         };
         let src = base.join("source");
-        sdk::scaffold(&src, "io.review.recovery", "Recovery").unwrap();
+        sdk::scaffold(&src, "io.review.recovery", "Recovery", true).unwrap();
         r.install(&src).unwrap();
         let id = r
             .placement("io.review.recovery", "create", Some("small"))
@@ -976,7 +1043,7 @@ mod tests {
             state: base.join("state"),
         });
         let src = base.join("source");
-        sdk::scaffold(&src, "io.review.contention", "Contention").unwrap();
+        sdk::scaffold(&src, "io.review.contention", "Contention", true).unwrap();
         r.install(&src).unwrap();
         let id = r
             .placement("io.review.contention", "create", Some("small"))

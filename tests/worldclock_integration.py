@@ -112,7 +112,7 @@ Window {
 }
 '''
     preview = temp / 'Integration.qml'
-    preview.write_text(harness)
+    preview.write_text('import "'+(root/'qml/Declarative.js').as_uri()+'" as Declarative\n'+harness)
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(temp))
     warnings = []

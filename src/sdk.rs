@@ -1,5 +1,5 @@
 use super::*;
-pub fn scaffold(path: &Path, id: &str, name: &str) -> Result<Value> {
+pub fn scaffold(path: &Path, id: &str, name: &str, qml: bool) -> Result<Value> {
     if !id_ok(id) || name.is_empty() || name.len() > 100 {
         return Err("Use a valid widget ID and a name up to 100 bytes".into());
     }
@@ -8,6 +8,21 @@ pub fn scaffold(path: &Path, id: &str, name: &str) -> Result<Value> {
     let result = (|| {
         let mut m: Value =
             serde_json::from_str(include_str!("../sdk/starter/widget.json")).map_err(err)?;
+        if !qml {
+            for key in [
+                "entryPoint",
+                "settingsEntryPoint",
+                "capabilities",
+                "dependencies",
+                "refresh",
+            ] {
+                m.as_object_mut().unwrap().remove(key);
+            }
+            m["renderer"] = json!("declarative");
+            m["requires"] = json!(["declarative-v1", "settings-schema", "frame-settings"]);
+            m["view"] = json!({"type":"column","children":[{"type":"text","value":{"setting":"title"},"style":"heading"},{"type":"text","value":{"setting":"note"}}]});
+            m["settingsUi"] = json!([{"key":"title","label":"Title","type":"text"},{"key":"note","label":"Note","type":"text"}]);
+        }
         m["id"] = json!(id);
         m["name"] = json!(name);
         atomic_json(&path.join("widget.json"), &m)?;
@@ -16,6 +31,14 @@ pub fn scaffold(path: &Path, id: &str, name: &str) -> Result<Value> {
             ("Settings.qml", include_str!("../sdk/starter/Settings.qml")),
             ("README.md", include_str!("../sdk/starter/README.md")),
         ] {
+            if !qml && file.ends_with(".qml") {
+                continue;
+            }
+            let content = if !qml && file == "README.md" {
+                "# Declarative widget\n\nEdit widget.json; Core owns rendering and settings. See Core docs/declarative-widgets.md. No package code runs in the shared renderer.\n"
+            } else {
+                content
+            };
             let mut out = OpenOptions::new()
                 .write(true)
                 .create_new(true)

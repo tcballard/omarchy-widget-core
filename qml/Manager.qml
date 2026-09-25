@@ -210,7 +210,7 @@ FocusScope {
                     }
                     Flow {
                         Layout.fillWidth: true; spacing: Style.space(6)
-                        Ui.Button { objectName: "configure-"+instanceCard.modelData.instanceId; text: "Configure"; visible: instanceCard.available && !!instanceCard.modelData.manifest.settingsEntryPoint; enabled: !root.busy; onClicked: root.configureRequested(instanceCard.modelData.instanceId) }
+                        Ui.Button { objectName: "configure-"+instanceCard.modelData.instanceId; text: "Configure"; visible: instanceCard.available && (!!instanceCard.modelData.manifest.settingsEntryPoint || instanceCard.modelData.manifest.renderer==="declarative"); enabled: !root.busy; onClicked: root.configureRequested(instanceCard.modelData.instanceId) }
                         Ui.Button { text: "Arrange"; visible: instanceCard.available; enabled: !root.busy; onClicked: root.arrangeRequested() }
                         Ui.Button { objectName: "duplicate-"+instanceCard.modelData.instanceId; text: "Duplicate"; visible: instanceCard.available; enabled: !root.busy; onClicked: root.duplicateRequested(instanceCard.modelData.instanceId) }
                         Ui.Button { objectName: "toggle-"+instanceCard.modelData.instanceId; text: instanceCard.modelData.placement.enabled ? "Hide" : "Show"; visible: instanceCard.available; enabled: !root.busy; onClicked: root.toggleRequested(instanceCard.modelData.instanceId,!instanceCard.modelData.placement.enabled) }

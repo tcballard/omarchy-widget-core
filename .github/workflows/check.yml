@@ -61,6 +61,9 @@ jobs:
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/lifecycle.py
       - run: python3 tests/window_lifecycle.py
+      - run: python3 tests/declarative.py target/debug/omarchy-widget
+      - run: python3 tests/declarative_controller.py target/debug/omarchy-widget
+      - run: python3 sdk/render_previews.py test-results/declarative-previews --package examples/declarative-clock
       - run: python3 tests/sdk.py target/debug/omarchy-widget
       - run: python3 tests/preview_contract.py
       - run: python3 tests/review_delivery.py target/debug/omarchy-widget

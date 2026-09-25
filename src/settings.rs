@@ -145,6 +145,7 @@ pub fn validate(m: &Value, v: &Value) -> Result<()> {
     }
     if !m["settingsSchema"].is_null() {
         check(&m["settingsSchema"], v, "Settings")?;
+        declarative::validate_settings(m, v)?;
     }
     Ok(())
 }

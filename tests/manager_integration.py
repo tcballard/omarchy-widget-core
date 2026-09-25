@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory() as directory:
     controller = controller.replace('Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"', 'true')
     helper = next(line for line in controller.splitlines() if 'readonly property string helper:' in line)
     controller = controller.replace(helper, '    property string helper: ' + json.dumps(str(binary)))
-    manager = source[source.index('        Core.Manager {'):source.index('    QtObject {\n        id: settingsContext')].rsplit('\n    }', 1)[0]
+    manager = source[source.index('Core.Manager {'):source.index('        // manager-content-end')]
     manager = manager.replace('Core.Manager {', 'Core.Manager {\n id:manager;objectName:"manager";', 1)
     harness = '''import QtQuick
 import qs.Commons
@@ -87,7 +87,7 @@ Window {
 }
 '''
     path = temp / 'Integration.qml'
-    path.write_text(harness)
+    path.write_text('import "'+(root/'qml/Declarative.js').as_uri()+'" as Declarative\n'+harness)
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(temp))
     warnings = []
