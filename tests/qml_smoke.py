@@ -37,6 +37,7 @@ Window {
     }
     function populate() {
         manager.entries = [{manifest:{id:"io.example.fixture",name:"Contract fixture",version:"0.1.0"},instanceId:"io.example.fixture",placement:{enabled:true,workspace:2}}]
+        manager.toggleDetails("instance", "io.example.fixture")
     }
     Core.WidgetFrame {
         id:frame; objectName:"frame"; anchors.fill:parent; anchors.margins:20; visible:false

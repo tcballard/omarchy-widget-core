@@ -236,7 +236,7 @@ Item {
     Timer {
         interval:250
         running:root.managerRole && !root.declarativeWanted && root.configuring==="" && root.snapshotReady && !root.managerOpen && !root.editing && !root.revealing && !operation.busy && root.pendingClose===null && Object.keys(root.contentFailures).length===0
-        onTriggered:Quickshell.quit()
+        onTriggered:Qt.quit()
     }
     IpcHandler {
         target: "io.github.tcballard.widget-core"
@@ -264,15 +264,17 @@ Item {
             MouseArea { anchors.fill:parent; onClicked:root.control("dismiss-reveal") }
         }
     }
-    PanelWindow {
+    FloatingWindow {
+        title: "Widget Manager"
         visible: root.managerOpen
+        onClosed: {
+            root.repairDismissed=true;
+            root.control("close-manager");
+            root.managerOpen=false;
+        }
         implicitWidth: Math.min(Style.space(760),screen ? screen.width-Style.space(32) : Style.space(760))
         implicitHeight: Math.min(Style.space(660),screen ? screen.height-Style.space(32) : Style.space(660))
         color: "transparent"
-        exclusionMode: ExclusionMode.Normal
-        WlrLayershell.namespace: "tcballard-widget-manager"
-        WlrLayershell.layer: WlrLayer.Overlay
-        WlrLayershell.keyboardFocus: WlrKeyboardFocus.OnDemand
         Loader {
             anchors.fill:parent
             active:root.managerRole && root.managerOpen

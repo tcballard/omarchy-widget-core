@@ -789,6 +789,11 @@ impl Registry {
             }
             "finish-arrange" => runtime["editing"] = json!(false),
             "show" => runtime["shown"] = json!(true),
+            "toggle" => {
+                runtime["shown"] = json!(!runtime["shown"].as_bool().unwrap_or(true));
+                runtime["revealUntil"] = json!(0);
+                runtime["editing"] = json!(false);
+            }
             "hide-all" => {
                 runtime["revealUntil"] = json!(0);
                 runtime["shown"] = json!(false);
@@ -2436,6 +2441,31 @@ mod tests {
             r.snapshot().unwrap()["installed"].as_array().unwrap().len(),
             1
         );
+    }
+    #[test]
+    fn visibility_toggle_preserves_instances_and_manager() {
+        let t = Temp::new();
+        let source = t.0.join("source");
+        fixture(&source);
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&source).unwrap();
+        r.placement("io.example.test", "add", None).unwrap();
+        r.placement("io.example.test", "hide", None).unwrap();
+        r.control("manage").unwrap();
+        r.control("arrange").unwrap();
+        let before = r.layout().unwrap()["placements"].clone();
+        r.control("toggle").unwrap();
+        let state = r.layout().unwrap();
+        assert_eq!(state["runtime"]["shown"], false);
+        assert_eq!(state["runtime"]["editing"], false);
+        assert_eq!(state["runtime"]["managerOpen"], true);
+        assert_eq!(state["runtime"]["revealUntil"], 0);
+        r.control("toggle").unwrap();
+        assert_eq!(r.layout().unwrap()["runtime"]["shown"], true);
+        assert_eq!(r.layout().unwrap()["placements"], before);
     }
     #[test]
     fn host_control_survives_reopen_without_session_ipc() {

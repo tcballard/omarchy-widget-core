@@ -35,7 +35,7 @@ with tempfile.TemporaryDirectory() as d:
     controller=controller.replace('id: root','id: root;objectName:"controller"',1).replace('Quickshell.env("OMARCHY_WIDGET_ROLE") === "manager"','true').replace('Quickshell.env("OMARCHY_WIDGET_REVEAL") === "1"','false')
     helper=next(line for line in controller.splitlines() if 'readonly property string helper:' in line)
     controller=controller.replace(helper,'property string helper:'+json.dumps(str(binary)))
-    context=source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {')]
+    context=source[source.index('    QtObject {\n        id: settingsContext'):source.index('    FloatingWindow {\n        title: "Widget settings"')]
     panel=source[source.index('        Core.SettingsPanel {'):source.index('    Variants {')].rsplit('\n    }',1)[0]
     fixture=temp/'Test.qml';fixture.write_text('''import QtQuick
 import qs.Commons

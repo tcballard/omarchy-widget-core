@@ -83,7 +83,12 @@ identities. Legacy `add PACKAGE_ID` is CLI compatibility: it can create an initi
 package-ID placement, but after deletion it allocates a fresh identity returned in
 `updated`. Old commands cannot target the replacement. Existing `add INSTANCE_ID`
 also remains supported; the manager uses `show`. `stop`, `start`, `restart` and
-`hide-all` control Core and its widget runners.
+`hide-all` control Core and its widget runners. `omarchy-widget toggle` atomically
+hides/shows desktop widgets globally without changing individual visibility,
+settings or placement. It exits arrange/reveal mode and leaves the manager alone.
+For a personal visibility shortcut, bind `SUPER + F1` to `omarchy-widget toggle`
+after checking that the key is free. On keyboards with media keys enabled, Fn may
+be needed to send F1; Fn itself is not a Hyprland modifier.
 
 To uninstall the runtime while preserving widget data:
 
