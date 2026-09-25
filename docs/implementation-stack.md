@@ -1,5 +1,7 @@
 # Widget Core implementation stack
 
+Historical implementation plan. The review follow-up introduces API 3; see [review-remediation.md](review-remediation.md) for current status.
+
 Requested 16 September 2026. Work through these milestones as dependent development
 PRs. Preserve the existing Rust broker, per-package sandbox runners, grid and API 2.
 World Clock is the first consumer of the infrastructure. Do not merge or release

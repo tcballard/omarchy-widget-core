@@ -119,6 +119,17 @@ Window {
         QTest.qWait(50)
         item = find(window.contentItem(), name)
         assert item is not None and item.isVisible() and item.isEnabled(), name
+        # Scroll the control itself, not just its potentially taller delegate.
+        for list_name in ['instances-list', 'available-list']:
+            listing = find(window.contentItem(), list_name)
+            ancestor = item.parentItem()
+            while ancestor is not None and ancestor != listing:
+                ancestor = ancestor.parentItem()
+            if ancestor == listing:
+                call(listing, 'ensureVisible', item)
+                QTest.qWait(30)
+                local = item.mapToItem(listing, QPoint(0, 0))
+                assert local.y() >= -1 and local.y()+item.height() <= listing.height()+1, (name, local.y(), listing.height())
         point = item.mapToScene(QPoint(int(item.width()/2), int(item.height()/2)))
         assert 0 <= point.y() < window.height(), (name, point.y())
         QTest.mouseClick(window, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
@@ -194,6 +205,24 @@ Window {
     show_instance(second)
     click('toggle-' + second)
     assert placement(second)['enabled']
+    # Tab through the taller instance row. Focus must scroll into the viewport;
+    # activate Hide with Space and Show with Return, without mouse repositioning.
+    show_instance(second)
+    button = find(window.contentItem(), 'configure-' + second)
+    button.forceActiveFocus()
+    for _ in range(12):
+        if window.activeFocusItem().objectName() == 'toggle-' + second:
+            break
+        QTest.keyClick(window, Qt.Key.Key_Tab)
+        QTest.qWait(30)
+    assert window.activeFocusItem().objectName() == 'toggle-' + second
+    focused=window.activeFocusItem(); listing=find(window.contentItem(),'instances-list')
+    local=focused.mapToItem(listing,QPoint(0,0))
+    assert local.y()>=-1 and local.y()+focused.height()<=listing.height()+1
+    QTest.keyClick(window,Qt.Key.Key_Space);sync();assert not placement(second)['enabled']
+    # Polling updates can replace delegates; re-find the same control by identity.
+    find(window.contentItem(),'toggle-'+second).forceActiveFocus()
+    QTest.keyClick(window,Qt.Key.Key_Return);sync();assert placement(second)['enabled']
     out = root / 'test-results'
     out.mkdir(exist_ok=True)
     assert window.grabWindow().save(str(out / 'manager-instances.png'))

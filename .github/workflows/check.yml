@@ -15,6 +15,15 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo test --locked
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - uses: actions/checkout@v4
+        with:
+          repository: tcballard/omarchy-widget-core
+          ref: dc96dd4a4dc72603cabaae4e7151f7c15c47c662
+          path: test-results/older-core
+          persist-credentials: false
+      - run: cargo build --locked --manifest-path test-results/older-core/Cargo.toml
+      - run: cargo build --locked
+      - run: python3 tests/api_compatibility.py target/debug/omarchy-widget test-results/older-core/target/debug/omarchy-widget
   sandbox:
     runs-on: ubuntu-22.04
     steps:
@@ -36,13 +45,19 @@ jobs:
       - run: python3 tests/qml_smoke.py
       - run: python3 tests/lifecycle.py
       - run: python3 tests/sdk.py target/debug/omarchy-widget
+      - run: python3 tests/package_helpers.py target/debug/omarchy-widget
+      - run: python3 tests/countdown_integration.py target/debug/omarchy-widget
       - run: python3 tests/runtime_integration.py target/debug/omarchy-widget
-      - run: python3 tests/manager_integration.py target/debug/omarchy-widget
-      - name: Fetch the pinned World Clock API 2 integration fixture
+      - name: Manager mouse and keyboard at supported scale factors
+        run: |
+          for scale in 1 1.25 1.5 2; do
+            QT_SCALE_FACTOR="$scale" python3 tests/manager_integration.py target/debug/omarchy-widget
+          done
+      - name: Fetch the pinned World Clock API 3 integration fixture
         uses: actions/checkout@v4
         with:
           repository: tcballard/omarchy-widget-worldclock
-          ref: 5cd7b0894376eb16d070fa244f4aeaea1448dd58
+          ref: e65a5fb6229f5c5b769b65e6997a5a3fd0911896
           path: test-results/worldclock
           persist-credentials: false
       - run: python3 tests/worldclock_integration.py target/debug/omarchy-widget test-results/worldclock

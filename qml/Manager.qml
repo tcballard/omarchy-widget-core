@@ -8,6 +8,8 @@ FocusScope {
     property var entries: []
     property var catalog: []
     property var retained: []
+    property var monitors: []
+    property string notice: ""
     property bool busy: false
     property string error: ""
     property string workspaceError: ""
@@ -29,6 +31,8 @@ FocusScope {
     signal weatherPermissionRequested(string packageId, bool allowed)
     signal packageControlRequested(string packageId, string action)
     signal rollbackRequested(string packageId)
+    signal exportRequested(string packageId)
+    signal recoverRequested(string instanceId, string family, string monitor)
     function ask(kind,id,name) { if(!busy) { confirmation={kind:kind,id:id,name:name}; confirmationPanel.forceActiveFocus(); } }
     function confirm(policy) {
         if(busy || !confirmation)return;
@@ -66,6 +70,8 @@ FocusScope {
             objectName: "available-list"
             visible: root.view === "available"
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: Style.space(12)
+            cacheBuffer: 100000
+            function ensureVisible(item) { var p=item.mapToItem(contentItem,0,0); if(p.y<contentY)contentY=p.y;else if(p.y+item.height>contentY+height)contentY=p.y+item.height-height; }
             model: root.catalog
             delegate: Rectangle {
                 id: packageCard
@@ -90,7 +96,7 @@ FocusScope {
                         color: Color.muted; Layout.fillWidth:true; wrapMode:Text.Wrap
                     }
                     Label {
-                        text: packageCard.modelData.health ? "Runner: "+packageCard.modelData.health.state+" · failures "+packageCard.modelData.health.failures : "Runner status unavailable"
+                        text: packageCard.modelData.loadFailure ? "Widget content failed to load. Package stopped; settings preserved. Export settings, roll back, or install a compatible update, then Enable package." : packageCard.modelData.health ? "Runner: "+packageCard.modelData.health.state+" · failures "+packageCard.modelData.health.failures : "Runner status unavailable"
                         color: packageCard.modelData.health && packageCard.modelData.health.state==="failed" ? Color.urgent : Color.muted
                         Layout.fillWidth:true; wrapMode:Text.Wrap
                     }
@@ -98,6 +104,7 @@ FocusScope {
                         Layout.fillWidth:true; spacing:Style.space(6)
                         Ui.Button {text:"Restart"; enabled:!root.busy; onClicked:root.packageControlRequested(packageCard.modelData.packageId,"restart")}
                         Ui.Button {text:packageCard.modelData.packageDisabled ? "Enable package" : "Disable package"; enabled:!root.busy; onClicked:root.packageControlRequested(packageCard.modelData.packageId,packageCard.modelData.packageDisabled ? "enable" : "disable")}
+                        Ui.Button {text:"Export settings"; enabled:!root.busy; onClicked:root.exportRequested(packageCard.modelData.packageId)}
                         Ui.Button {text:"Roll back update"; enabled:!root.busy; onClicked:root.rollbackRequested(packageCard.modelData.packageId)}
                     }
                     Ui.Button {
@@ -130,11 +137,15 @@ FocusScope {
             objectName: "instances-list"
             visible: root.view === "instances"
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: Style.space(12)
+            cacheBuffer: 100000
+            function ensureVisible(item) { var p=item.mapToItem(contentItem,0,0); if(p.y<contentY)contentY=p.y;else if(p.y+item.height>contentY+height)contentY=p.y+item.height-height; }
             model: root.instances
             delegate: Rectangle {
                 id: instanceCard
                 required property var modelData
                 readonly property bool available: !modelData.uninstalled
+                property string chosenSize: modelData.placement.size || "medium"
+                property string chosenMonitor: ""
                 width: ListView.view.width; height: instanceContent.implicitHeight + Style.space(24)
                 color: "transparent"; border.width: 1; border.color: Color.muted; radius: Style.cornerRadius
                 ColumnLayout {
@@ -143,13 +154,29 @@ FocusScope {
                     Label { text: instanceCard.modelData.manifest.name; font.bold: true; Layout.fillWidth: true }
                     Label { text: instanceCard.modelData.instanceId; color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.fillWidth: true; elide: Text.ElideMiddle }
                     Label {
-                        text: (instanceCard.modelData.placement.size || "medium") + " · " + (instanceCard.modelData.placement.monitor || "Automatic monitor") + " · workspace " + (instanceCard.modelData.placement.workspace || "all")
+                        text: (instanceCard.modelData.placement.size || "medium") + " · " + ("preferred " + (instanceCard.modelData.placement.monitor || "Automatic monitor")) + " · workspace " + (instanceCard.modelData.placement.workspace || "all")
                         color: Color.muted; font.pixelSize: Style.font.bodySmall; Layout.fillWidth: true; wrapMode: Text.Wrap
                     }
                     Label {
-                        text: !instanceCard.available ? "Package uninstalled · settings kept. Reinstall it to show this widget." : !instanceCard.modelData.placement.enabled ? "Hidden" : !instanceCard.modelData.effective ? "Unplaced — no available cells or desktop geometry" : "On desktop · " + instanceCard.modelData.effective.monitor
+                        text: !instanceCard.available ? "Package uninstalled · settings kept. Reinstall it to show this widget." : !instanceCard.modelData.placement.enabled ? "Hidden" : !instanceCard.modelData.effective ? "Unplaced — no available cells or desktop geometry" : (instanceCard.modelData.effective.monitor === instanceCard.modelData.placement.monitor && instanceCard.modelData.effective.column === instanceCard.modelData.placement.cell.column && instanceCard.modelData.effective.row === instanceCard.modelData.placement.cell.row ? "On preferred cells · " : "Temporary fallback · ") + instanceCard.modelData.effective.monitor
                         color: instanceCard.available && instanceCard.modelData.placement.enabled && !instanceCard.modelData.effective ? Color.urgent : Color.muted
                         font.pixelSize: Style.font.bodySmall; Layout.fillWidth: true; wrapMode: Text.Wrap
+                    }
+                    Flow {
+                        visible:instanceCard.available; Layout.fillWidth:true; spacing:Style.space(6)
+                        Repeater {
+                            model:instanceCard.modelData.manifest.families || []
+                            Ui.Button { required property string modelData; objectName:"resize-"+instanceCard.modelData.instanceId+"-"+modelData; text:modelData; selected:instanceCard.chosenSize===modelData; onClicked:instanceCard.chosenSize=modelData }
+                        }
+                    }
+                    Flow {
+                        visible:instanceCard.available; Layout.fillWidth:true; spacing:Style.space(6)
+                        Ui.Button { text:"Automatic monitor"; selected:instanceCard.chosenMonitor===""; onClicked:instanceCard.chosenMonitor="" }
+                        Repeater {
+                            model:root.monitors
+                            Ui.Button { required property string modelData; text:modelData; selected:instanceCard.chosenMonitor===modelData; onClicked:instanceCard.chosenMonitor=modelData }
+                        }
+                        Ui.Button { objectName:"recover-"+instanceCard.modelData.instanceId; text:"Find free position"; enabled:!root.busy; onClicked:root.recoverRequested(instanceCard.modelData.instanceId,instanceCard.chosenSize,instanceCard.chosenMonitor) }
                     }
                     RowLayout {
                         visible: instanceCard.available
@@ -165,6 +192,7 @@ FocusScope {
                                 selectByMouse: true; maximumLength: 4
                                 validator: RegularExpressionValidator { regularExpression: /all|[1-9][0-9]{0,3}/ }
                                 Accessible.name: "Workspace for " + instanceCard.modelData.manifest.name + "; all or a number"
+                                onActiveFocusChanged: if(activeFocus) instancesList.ensureVisible(workspace)
                                 onAccepted: if(acceptableInput && !root.busy) root.workspaceRequested(instanceCard.modelData.instanceId,text)
                             }
                         }
@@ -183,6 +211,7 @@ FocusScope {
             Label { anchors.centerIn: parent; width: parent.width; visible: !root.instances.length; text: "Your desktop has no widgets yet.\nChoose Available to add one."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap }
         }
         Label { text: root.workspaceError; visible: text!==""; color: Color.urgent; wrapMode: Text.Wrap; Layout.fillWidth: true }
+        Label { text:root.notice; visible:text!==""; wrapMode:Text.Wrap; Layout.fillWidth:true }
         Label { text: root.error; visible: text!==""; color: Color.urgent; wrapMode: Text.Wrap; Layout.fillWidth: true }
         RowLayout {
             Layout.fillWidth: true

@@ -8,6 +8,9 @@ const TTL: u64 = 900_000;
 struct Entry {
     data: Value,
     updated: u64,
+    wall_updated: u64,
+    touched: u64,
+    owner: String,
     retry: u64,
     pending: bool,
     error: String,
@@ -16,6 +19,7 @@ struct Entry {
 struct Cache {
     entries: BTreeMap<String, Entry>,
     next_request: u64,
+    package_retry: BTreeMap<String, u64>,
 }
 static CACHE: OnceLock<Arc<Mutex<Cache>>> = OnceLock::new();
 pub fn coordinates(lat: &str, lon: &str) -> Result<(String, String)> {
@@ -147,16 +151,69 @@ fn fetch(lat: &str, lon: &str) -> Result<Value> {
     project(&serde_json::from_slice::<Value>(&bytes).map_err(err)?)
 }
 impl Cache {
-    fn request(&mut self, key: &str, now: u64, active: bool) -> Result<(Value, bool)> {
-        if !self.entries.contains_key(key) && self.entries.len() >= 128 {
-            return Err("Weather cache is full; restart Core to clear unused locations".into());
+    fn request(
+        &mut self,
+        package: &str,
+        key: &str,
+        now: u64,
+        active: bool,
+    ) -> Result<(Value, bool)> {
+        let missing = !self.entries.contains_key(key);
+        let eligible = active
+            && now >= self.next_request
+            && now >= self.package_retry.get(package).copied().unwrap_or(0);
+        // Hidden misses and throttled misses consume neither memory nor another
+        // user's cached data. Existing public results can still be read/shared.
+        if missing && !eligible {
+            return Ok((
+                json!({"state":"loading","data":null,"updatedAt":0,"refreshing":false,"error":""}),
+                false,
+            ));
         }
-        let e = self.entries.entry(key.into()).or_default();
+        if missing {
+            let owned = self.entries.values().filter(|e| e.owner == package).count();
+            if owned >= 16 || self.entries.len() >= 128 {
+                let victim = self
+                    .entries
+                    .iter()
+                    .filter(|(_, e)| !e.pending && (owned < 16 || e.owner == package))
+                    .min_by_key(|(_, e)| e.touched)
+                    .map(|(key, _)| key.clone());
+                if let Some(victim) = victim {
+                    self.entries.remove(&victim);
+                } else {
+                    return Err("Weather is busy; retry shortly".into());
+                }
+            }
+            self.entries.insert(
+                key.into(),
+                Entry {
+                    owner: package.into(),
+                    ..Entry::default()
+                },
+            );
+        }
+        let e = self.entries.get_mut(key).unwrap();
+        if active {
+            e.touched = now;
+        }
         let stale = e.data.is_null() || now.saturating_sub(e.updated) >= TTL;
-        let start = active && stale && !e.pending && now >= e.retry && now >= self.next_request;
+        let start = eligible && stale && !e.pending && now >= e.retry;
         if start {
             e.pending = true;
-            self.next_request = now + 10_000;
+            self.next_request = now.saturating_add(10_000);
+            if !self.package_retry.contains_key(package) && self.package_retry.len() >= MAX_PACKAGES
+            {
+                let oldest = self
+                    .package_retry
+                    .iter()
+                    .min_by_key(|(_, v)| *v)
+                    .map(|(k, _)| k.clone())
+                    .unwrap();
+                self.package_retry.remove(&oldest);
+            }
+            self.package_retry
+                .insert(package.into(), now.saturating_add(60_000));
         }
         let state = if e.data.is_null() {
             if e.error.is_empty() {
@@ -170,43 +227,68 @@ impl Cache {
             "ready"
         };
         Ok((
-            json!({"state":state,"data":e.data,"updatedAt":e.updated,"refreshing":e.pending,"error":e.error}),
+            json!({"state":state,"data":e.data,"updatedAt":e.wall_updated,"refreshing":e.pending,"error":e.error}),
             start,
         ))
     }
-    fn complete(&mut self, key: &str, now: u64, result: Result<Value>) {
+    fn complete(&mut self, key: &str, now: u64, wall: u64, result: Result<Value>) {
         if let Some(e) = self.entries.get_mut(key) {
             e.pending = false;
             match result {
                 Ok(data) => {
                     e.data = data;
                     e.updated = now;
+                    e.wall_updated = wall;
                     e.error.clear();
-                    e.retry = now + TTL;
+                    e.retry = now.saturating_add(TTL);
                 }
                 Err(_) => {
                     e.error = "Weather service unavailable; retrying later".into();
-                    e.retry = now + 60_000;
+                    e.retry = now.saturating_add(60_000);
                 }
             }
         }
     }
 }
-pub fn request(lat: &str, lon: &str, active: bool) -> Result<Value> {
+// Linux CLOCK_BOOTTIME is monotonic and includes time spent suspended.
+// Wall time is used only for the externally displayed updatedAt timestamp.
+fn elapsed_ms() -> Result<u64> {
+    #[repr(C)]
+    struct Timespec {
+        seconds: std::os::raw::c_long,
+        nanos: std::os::raw::c_long,
+    }
+    unsafe extern "C" {
+        fn clock_gettime(clock: i32, time: *mut Timespec) -> i32;
+    }
+    let mut time = Timespec {
+        seconds: 0,
+        nanos: 0,
+    };
+    // SAFETY: valid writable timespec, correct Linux C ABI; no retained pointer.
+    if unsafe { clock_gettime(7, &mut time) } != 0 {
+        return Err("Monotonic clock unavailable".into());
+    }
+    Ok(time.seconds as u64 * 1000 + time.nanos as u64 / 1_000_000)
+}
+pub fn request(package: &str, lat: &str, lon: &str, active: bool) -> Result<Value> {
     let (lat, lon) = coordinates(lat, lon)?;
     let key = format!("{lat},{lon}");
     let cache = CACHE
         .get_or_init(|| Arc::new(Mutex::new(Cache::default())))
         .clone();
-    let (result, start) = cache
-        .lock()
-        .map_err(err)?
-        .request(&key, reveal::now(), active)?;
+    let (result, start) =
+        cache
+            .lock()
+            .map_err(err)?
+            .request(package, &key, elapsed_ms()?, active)?;
     if start {
         std::thread::spawn(move || {
             let result = fetch(&lat, &lon);
             if let Ok(mut c) = cache.lock() {
-                c.complete(&key, reveal::now(), result);
+                if let Ok(now) = elapsed_ms() {
+                    c.complete(&key, now, reveal::now(), result);
+                }
             }
         });
     }
@@ -260,19 +342,19 @@ mod tests {
     fn deduplication_stale_retry_and_hidden_budget() {
         let mut c = Cache::default();
         let key = "51.50,-0.12";
-        assert!(!c.request(key, 100, false).unwrap().1);
-        assert!(c.request(key, 100, true).unwrap().1);
-        assert!(!c.request(key, 200, true).unwrap().1);
-        c.complete(key, 300, Ok(json!({"temperatureC":21})));
-        assert_eq!(c.request(key, 400, true).unwrap().0["state"], "ready");
-        assert!(c.request(key, TTL + 400, true).unwrap().1);
-        c.complete(key, TTL + 500, Err("offline".into()));
-        let (r, start) = c.request(key, TTL + 600, true).unwrap();
+        assert!(!c.request("a", key, 100, false).unwrap().1);
+        assert!(c.request("a", key, 100, true).unwrap().1);
+        assert!(!c.request("a", key, 200, true).unwrap().1);
+        c.complete(key, 300, 86400000, Ok(json!({"temperatureC":21})));
+        assert_eq!(c.request("a", key, 400, true).unwrap().0["state"], "ready");
+        assert!(c.request("a", key, TTL + 400, true).unwrap().1);
+        c.complete(key, TTL + 500, 1000, Err("offline".into()));
+        let (r, start) = c.request("a", key, TTL + 600, true).unwrap();
         assert!(!start);
         assert_eq!(r["state"], "stale");
         assert_eq!(r["data"]["temperatureC"], 21);
-        assert!(!c.request(key, TTL + 100_000, false).unwrap().1);
-        assert!(c.request(key, TTL + 100_000, true).unwrap().1);
+        assert!(!c.request("a", key, TTL + 100_000, false).unwrap().1);
+        assert!(c.request("a", key, TTL + 100_000, true).unwrap().1);
     }
     #[test]
     fn rejects_malformed_response_and_bounds_cache() {
@@ -283,10 +365,36 @@ mod tests {
             20.0
         );
         let mut c = Cache::default();
-        for i in 0..128 {
-            c.request(&i.to_string(), 100, false).unwrap();
+        for i in 0..1024 {
+            c.request("a", &i.to_string(), 100, false).unwrap();
         }
-        assert!(c.request("extra", 100, false).is_err());
+        assert!(c.entries.is_empty());
+        assert!(c.request("b", "extra", 100, true).unwrap().1);
+        c.complete("extra", 101, 86400000, Ok(json!({"temperatureC":20})));
+        // Wall time jumps backwards, while BOOTTIME advances through sleep.
+        assert!(c.request("b", "extra", TTL + 102, true).unwrap().1);
+        c.complete("extra", TTL + 103, 1000, Err("offline".into()));
+        assert_eq!(
+            c.request("b", "extra", TTL + 104, true).unwrap().0["state"],
+            "stale"
+        );
+        assert!(c.request("b", "extra", TTL + 60104, true).unwrap().1);
+        assert!(elapsed_ms().unwrap() > 0);
+    }
+    #[test]
+    fn coordinate_churn_is_bounded_and_other_packages_can_refresh() {
+        let mut c = Cache::default();
+        for i in 0..300 {
+            let now = 100 + i * 60000;
+            let key = i.to_string();
+            assert!(c.request("churn", &key, now, true).unwrap().1);
+            c.complete(&key, now + 1, 1000, Ok(json!({"temperatureC":21})));
+            assert!(c.entries.values().filter(|e| e.owner == "churn").count() <= 16);
+            // One package cannot take the next global admission slot.
+            assert!(!c.request("churn", "another", now + 10000, true).unwrap().1);
+            assert!(c.request("neighbour", "shared", now + 10000, true).is_ok());
+        }
+        assert!(c.entries.len() <= 17);
     }
     #[test]
     fn private_and_reserved_destinations_denied() {

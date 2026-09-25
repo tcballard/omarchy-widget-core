@@ -59,10 +59,23 @@ pub fn client(path: &str, args: &[String]) -> Result<Value> {
     Ok(response)
 }
 
-fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result<Value> {
-    // Reject a runner from a removed/replaced generation before reading or writing state.
+fn scoped(
+    r: &Registry,
+    package: &str,
+    source: &Path,
+    serial: u64,
+    args: &[String],
+) -> Result<Value> {
+    // Hold authority, ownership checks and mutation under the same registry lock.
+    let lock = r.lock()?;
     let layout = r.layout()?;
-    if r.source(&layout, package)? != source {
+    if r.source(&layout, package)? != source
+        || layout["runtime"]["packageControls"][package]["serial"]
+            .as_u64()
+            .unwrap_or(0)
+            != serial
+        || layout["runtime"]["packageControls"][package]["disabled"] == true
+    {
         return Err("Runner generation expired".into());
     }
     match args.first().map(String::as_str) {
@@ -109,35 +122,67 @@ fn scoped(r: &Registry, package: &str, source: &Path, args: &[String]) -> Result
                         reveal::now(),
                     ))
                 && (p["workspace"].is_null() || p["workspace"] == d["monitors"][monitor]);
-            weather::request(&args[2], &args[3], active)
+            weather::request(package, &args[2], &args[3], active)
+        }
+        Some("content-failed")
+            if args.len() == 2 && layout["placements"][&args[1]]["packageId"] == package =>
+        {
+            let mut layout = layout;
+            let next = layout["revision"]
+                .as_u64()
+                .unwrap()
+                .checked_add(1)
+                .ok_or("Revision exhausted")?;
+            layout["runtime"]["packageControls"][package] =
+                json!({"disabled":true,"serial":next,"loadFailure":true});
+            if layout["placements"][layout["runtime"]["edit"]["instance"].as_str().unwrap_or("")]
+                ["packageId"]
+                == package
+            {
+                layout["runtime"]["edit"] = Value::Null;
+            }
+            r.commit(&mut layout)?;
+            Ok(json!(true))
         }
         Some("edit")
             if args.len() == 2 && layout["placements"][&args[1]]["packageId"] == package =>
         {
-            r.request_edit(&args[1])
+            r.request_edit_locked(&args[1], &lock)
         }
         Some("edit-done")
             if args.len() == 3 && layout["placements"][&args[1]]["packageId"] == package =>
         {
-            r.finish_edit(&args[1], &args[2])
+            r.finish_edit_locked(&args[1], &args[2], &lock)
         }
         Some(op @ ("save" | "place" | "hide" | "workspace")) => {
             let expected = if op == "hide" { 2 } else { 3 };
             if args.len() != expected || layout["placements"][&args[1]]["packageId"] != package {
                 return Err("Instance is outside this runner's authority".into());
             }
-            r.placement(&args[1], op, args.get(2).map(String::as_str))
+            r.placement_locked(
+                &args[1],
+                op,
+                args.get(2).map(String::as_str),
+                workspaces::snapshot,
+                &lock,
+            )
         }
         Some("control")
             if args.len() == 2 && ["arrange", "finish-arrange"].contains(&args[1].as_str()) =>
         {
-            r.control(&args[1])
+            r.control_locked(&args[1], &lock)
         }
         _ => Err("Operation is not available to widget runners".into()),
     }
 }
 
-fn serve(listener: &UnixListener, r: &Registry, package: &str, source: &Path) -> Result<()> {
+fn serve(
+    listener: &UnixListener,
+    r: &Registry,
+    package: &str,
+    source: &Path,
+    serial: u64,
+) -> Result<()> {
     // A fixed connection budget prevents one runner starving all the others.
     for _ in 0..1 {
         let (mut stream, _) = match listener.accept() {
@@ -148,7 +193,7 @@ fn serve(listener: &UnixListener, r: &Registry, package: &str, source: &Path) ->
         let result = (|| {
             let bytes = read_message(&mut stream, REQUEST_LIMIT, Duration::from_millis(100))?;
             let args: Vec<String> = serde_json::from_slice(&bytes).map_err(err)?;
-            scoped(r, package, source, &args)
+            scoped(r, package, source, serial, &args)
         })();
         let response =
             result.unwrap_or_else(|e| json!({"error":e.chars().take(240).collect::<String>()}));
@@ -197,6 +242,7 @@ fn policy(args: &[String], message: &str, revealing: bool) -> Result<Value> {
 
 struct Runner {
     source: PathBuf,
+    serial: u64,
     reveal_until: u64,
     directory: PathBuf,
     listener: UnixListener,
@@ -230,6 +276,7 @@ fn launch(
     source: &Path,
     upstream: &Path,
     reveal_until: u64,
+    serial: u64,
 ) -> Result<Runner> {
     let directory = runtime_directory(base, package);
     fs::create_dir(&directory).map_err(err)?;
@@ -267,6 +314,7 @@ fn launch(
         .map_err(err)?;
     Ok(Runner {
         source: source.into(),
+        serial,
         reveal_until,
         directory,
         listener,
@@ -354,7 +402,15 @@ pub fn supervise(config: &Path) -> Result<Value> {
                             continue;
                         }
                     }
-                    match launch(config, &base, &id, &source, &upstream, reveal_until) {
+                    match launch(
+                        config,
+                        &base,
+                        &id,
+                        &source,
+                        &upstream,
+                        reveal_until,
+                        generations[&id].1,
+                    ) {
                         Ok(runner) => {
                             runners.insert(id, runner);
                         }
@@ -406,7 +462,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     }
                     continue;
                 }
-                serve(&runner.listener, &r, id, &runner.source)?;
+                serve(&runner.listener, &r, id, &runner.source, runner.serial)?;
             }
             for id in dead {
                 runners.remove(&id);
@@ -489,7 +545,7 @@ mod tests {
     }
     #[test]
     fn broker_scopes_reads_writes_and_generations() {
-        let base = env::temp_dir().join(format!("island-test-{}", std::process::id()));
+        let base = env::temp_dir().join(format!("island-test-{}", nonce()));
         fs::create_dir(&base).unwrap();
         let r = Registry {
             data: base.join("data"),
@@ -509,6 +565,7 @@ mod tests {
                 &r,
                 "io.test.a",
                 &source,
+                0,
                 &args.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
             )
         };
@@ -551,12 +608,82 @@ mod tests {
         let listener = UnixListener::bind(&socket_path).unwrap();
         let socket_string = socket_path.to_str().unwrap().to_owned();
         let request = std::thread::spawn(move || client(&socket_string, &["list".into()]));
-        serve(&listener, &r, "io.test.a", &source).unwrap();
+        serve(&listener, &r, "io.test.a", &source, 0).unwrap();
         let response = request.join().unwrap().unwrap();
         assert_eq!(response["installed"].as_array().unwrap().len(), 1);
         assert!(!response.to_string().contains("io.test.b"));
         r.deploy(&base.join("io.test.a"), true).unwrap();
         assert!(call(&["list"]).is_err());
+        fs::remove_dir_all(base).unwrap();
+    }
+    #[test]
+    fn expired_runner_and_deleted_instance_cannot_mutate_under_lock() {
+        let base = env::temp_dir().join(format!("broker-authority-{}", nonce()));
+        fs::create_dir(&base).unwrap();
+        let r = Registry {
+            data: base.join("data"),
+            state: base.join("state"),
+        };
+        let src = base.join("source");
+        sdk::scaffold(&src, "io.example.authority", "Authority").unwrap();
+        r.install(&src).unwrap();
+        r.placement("io.example.authority", "add", None).unwrap();
+        let source = r
+            .source(&r.layout().unwrap(), "io.example.authority")
+            .unwrap();
+        let call = |args: &[&str]| {
+            scoped(
+                &r,
+                "io.example.authority",
+                &source,
+                0,
+                &args.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            )
+        };
+        let lock = r.lock().unwrap();
+        assert!(call(&["hide", "io.example.authority"])
+            .unwrap_err()
+            .contains("busy"));
+        drop(lock);
+        call(&["edit", "io.example.authority"]).unwrap();
+        r.package_control("io.example.authority", "restart")
+            .unwrap();
+        let before = r.layout().unwrap();
+        assert!(call(&["hide", "io.example.authority"])
+            .unwrap_err()
+            .contains("expired"));
+        assert_eq!(before, r.layout().unwrap());
+        let serial = before["runtime"]["packageControls"]["io.example.authority"]["serial"]
+            .as_u64()
+            .unwrap();
+        scoped(
+            &r,
+            "io.example.authority",
+            &source,
+            serial,
+            &["content-failed".into(), "io.example.authority".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            r.layout().unwrap()["runtime"]["packageControls"]["io.example.authority"]
+                ["loadFailure"],
+            true
+        );
+        assert!(scoped(
+            &r,
+            "io.example.authority",
+            &source,
+            serial,
+            &["hide".into(), "io.example.authority".into()]
+        )
+        .is_err());
+        r.remove_instance("io.example.authority").unwrap();
+        assert!(call(&[
+            "save",
+            "io.example.authority",
+            r#"{"revision":0,"settings":{}}"#
+        ])
+        .is_err());
         fs::remove_dir_all(base).unwrap();
     }
     #[test]

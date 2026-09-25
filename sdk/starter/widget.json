@@ -1,23 +1,49 @@
 {
   "schemaVersion": 2,
-  "coreApi": 2,
+  "coreApi": 3,
   "kind": "desktop-widget",
   "id": "io.example.starter",
   "name": "Widget starter",
   "version": "0.1.0",
   "entryPoint": "View.qml",
   "settingsEntryPoint": "Settings.qml",
-  "families": ["small", "medium", "large"],
+  "families": [
+    "small",
+    "medium",
+    "large"
+  ],
   "defaultFamily": "small",
-  "defaults": {"title": "Today", "note": "Choose one thing to focus on."},
+  "defaults": {
+    "title": "Today",
+    "note": "Choose one thing to focus on."
+  },
   "settingsVersion": 1,
   "settingsSchema": {
     "type": "object",
-    "properties": {"title": {"type": "string", "maxLength": 80}, "note": {"type": "string", "maxLength": 2000}},
-    "required": ["title", "note"],
+    "properties": {
+      "title": {
+        "type": "string",
+        "maxLength": 80
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "required": [
+      "title",
+      "note"
+    ],
     "additionalProperties": false
   },
   "capabilities": [],
   "refresh": "none",
-  "dependencies": {"commands": []}
+  "dependencies": {
+    "commands": []
+  },
+  "requires": [
+    "acknowledged-actions",
+    "frame-settings",
+    "settings-schema"
+  ]
 }

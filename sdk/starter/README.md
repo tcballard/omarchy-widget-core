@@ -1,6 +1,6 @@
 # Widget starter
 
-Develop against Widget Core API 2, using the SDK described in the Core repository.
+Develop against Widget Core API 3, using the SDK described in the Core repository.
 `View.qml` receives `widgetContext`; `Settings.qml` receives `settingsContext`.
 Core owns placement, exterior frame, theme, Save/Cancel and durable persistence.
 

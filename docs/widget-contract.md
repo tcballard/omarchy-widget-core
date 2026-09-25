@@ -1,12 +1,12 @@
 # Widget contract · Core v0.0.2
 
-Experimental API 2. Package version, manifest schema version and Core API are separate numbers. The release version reset does not reduce the API number.
+Experimental API 3. See [compatibility.md](compatibility.md). Package version, manifest schema version and Core API are separate numbers. The release version reset does not reduce the API number.
 
 ## Identity and manifest
 
 A package has a reverse-domain `id`; v0.0.2 supports one widget definition (`main`) per package. Desktop instances have independent `instanceId` values and settings. Manager Add and `create` always allocate a fresh identity; legacy `add PACKAGE` retains the package ID. `duplicate` also creates a fresh identity.
 
-See `examples/notes/widget.json` for a complete API 2 package. Required fields: `schemaVersion:2`, `kind:"desktop-widget"`, `coreApi:2`, `id`, `name`, numeric `version`, relative QML `entryPoint`, unique `families`, `defaultFamily`, object `defaults`. Optional `settingsEntryPoint` supplies the editor body. Families are `small`, `medium`, `large`; Core owns dimensions, frame, padding and movement.
+See `examples/notes/widget.json` for a complete API 3 package. Required fields: `schemaVersion:2`, `kind:"desktop-widget"`, `coreApi:3`, `id`, `name`, numeric `version`, relative QML `entryPoint`, unique `families`, `defaultFamily`, object `defaults`. Optional `settingsEntryPoint` supplies the editor body. Families are `small`, `medium`, `large`; Core owns dimensions, frame, padding and movement.
 
 Packages must be regular directories with at most 256 files / 8 MiB, bounded nesting, no symlinks or special files. Validation is structural, not a code security review. QML can execute processes. Install only trusted code.
 
@@ -23,7 +23,7 @@ The root QML item declares `required property var widgetContext`. Core passes it
 - `appearance`: desktop-owned widget tokens; effective desktop border size and rounding take precedence.
 - `requestConfigure()`: opens Core's settings surface when an editor is declared.
 
-Legacy API 1 additionally uses `sizeName`, `requestInput(bool)`, `saveSettings(object)`, `saving`, `saved`, and `saveError`. `saveSettings` returning true means queued, not durably saved. Observe completion state. No concurrent save for the same instance is accepted. The compatibility `qs.Commons` and `qs.Ui` modules belong to Core; they are not the shell's singletons and do not promise the full Quattro plugin API.
+API 3 supports `saveSettings(object, expectedRevision)`, `saving`, `saved`, and `saveError` for display actions. Pass the settings revision observed when preparing the action; omission uses the current acknowledged revision. Legacy API 1 additionally uses `sizeName` and `requestInput(bool)`. `saveSettings` returning true means queued, not durably saved. Observe completion state. No concurrent save for the same instance is accepted. An action acknowledgement never closes an open settings draft. The draft retains its original revision; Save then reports a conflict if the action changed durable state. Cancel/reopen to load the action result. Timers should persist absolute deadlines; see `examples/countdown` for Start/Pause/Resume. The compatibility `qs.Commons` and `qs.Ui` modules belong to Core; they are not the shell's singletons and do not promise the full Quattro plugin API.
 
 ## Settings editor
 
@@ -78,8 +78,8 @@ New commands:
   a supported Small/Medium/Large family. It never reuses an existing instance.
 - `remove-instance INSTANCE_ID`: delete only the named instance, including a
   retained instance. Clear any pending editor request for it. Stale revisioned
-  saves cannot recreate a removed instance. Legacy unconditional `configure` and
-  initial `place` behaviour remain available for CLI compatibility.
+  saves, Hide, Place, Workspace and Configure cannot recreate a removed instance.
+  Only explicit Add/Create allocate an initial instance; Duplicate requires an existing source.
 - `uninstall PACKAGE_ID keep|delete`: unregister the package and stop its runners;
   either retain its instances hidden or delete them. Retained code directories
   are not garbage-collected. Reinstallation preserves kept settings and positions
@@ -133,3 +133,6 @@ unapplied draft. Only one registered settings window is opened at a time.
 Frame appearance belongs to the desktop. Legacy per-instance appearance values
 remain in saved settings for compatibility but do not override the shared frame.
 Widget content can interpret its own settings within the frame.
+
+API 3 configurable widgets receive a Core-owned, keyboard-accessible settings gear.
+Do not add another gear in package content. API 1/2 retain their existing content controls.
