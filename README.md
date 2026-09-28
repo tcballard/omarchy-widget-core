@@ -143,10 +143,14 @@ Preferred monitor/cell coordinates survive monitor removal and resolution/gap ch
 
 ## Widgets manager (development)
 
-Open `omarchy-widget manage` or **Super+Space → Widgets**. **Available** lists
+Open `omarchy-widget manage` or **Super+Space → Widgets**. **Add widgets** lists
 installed widget types once each, with size choices, a preview and Add widget.
-Add starts from defaults; it does not replace or copy an existing instance.
-This is a local installed-package gallery, not an online store.
+Search by widget name or package ID. **Install widget…** opens a folder picker;
+you can also enter a local package folder path and choose **Install package**.
+After installation, choose a supported size and Add widget to create an instance
+from defaults. Adding does not replace or copy an existing instance.
+This is a local installed-package gallery, not an online store. The bundled Notes
+example includes previews for all three sizes.
 
 **Your widgets** lists individual instances, their monitor/workspace, size and
 visibility. Configure, Arrange, Duplicate, Hide/Show and Remove act from here.
@@ -167,9 +171,12 @@ Omarchy focus, keyboard navigation, scaling and monitor acceptance remain pendin
 
 ## Development stack and SDK
 
-The seven milestones are implemented as dependent draft PRs; see the
-[stack and verification record](docs/implementation-stack.md) for merge order and
-remaining desktop acceptance. No PR in this work has been merged or released.
+The development stack and subsequent review, declarative-renderer and manager
+changes have been merged into `main`, including the searchable local gallery.
+The [implementation stack](docs/implementation-stack.md) records the historical
+PR sequence and milestone verification; its draft and merge instructions describe
+that earlier work. Merging does not establish desktop acceptance or a supported
+release: Core remains experimental v0.0.2.
 
 Quick reveal is **disabled in the default build**. An explicit
 `experimental-reveal` Cargo feature retains the prototype and policy tests.
@@ -183,7 +190,7 @@ enable reveal or grant renderer network access.
 Create a package with `omarchy-widget new PATH ID NAME`. The
 [authoring SDK](docs/authoring-sdk.md) covers the starter, validator, previews,
 lifecycle, settings schemas and external-author workflow. Install
-`examples/weather` to exercise permissioned shared data; the Available tab grants
+`examples/weather` to exercise permissioned shared data; the Add widgets tab grants
 or revokes weather access. The same tab shows runner health and offers package
 restart, disable/enable and compatible rollback. Restart explicitly discards any
 unapplied draft belonging to that package; updates wait for the editor to close.
@@ -196,3 +203,32 @@ pending settings with a Cancel action, and layout errors offer Repair saved layo
 Repair saves the original bytes before quarantining invalid placements or runtime
 controls; it never silently resets a whole registry. Settings export/restore remains
 separate from complete data/state backup.
+
+## Testing the current build
+
+Start with the [desktop review harness](docs/test-harness.md), which records the
+checkout revision separately from the installed runtime and keeps a resumable
+report. From this checkout, create a new evidence folder:
+
+```bash
+python3 tools/desktop-review.py --output "$HOME/widget-review" start
+```
+
+Follow the harness prerequisites and automated-suite instructions, including the
+pinned World Clock, older Core and Wayland proxy fixtures. Missing fixtures are
+reported as blocked, not passed. The suite does not install Core or change your
+desktop installation. Run resource-pressure tests only in the disposable CI user.
+
+Once automated checks pass, install the tested revision using the instructions
+above and record the installed environment again. Work through the
+[desktop acceptance checklist](docs/desktop-checks.md) and the
+[declarative renderer checks](docs/declarative-widgets.md#development-test-and-migration):
+start with manager search/local install, Add/Duplicate/Hide/Show/Remove, settings
+Save/Cancel and persistence after restart. Then test arrange, workspace and monitor
+changes, scaling, themes, update/rollback and idle resource use.
+
+Check both renderer paths: declarative packages share one Core renderer, while
+advanced QML packages have separate sandboxed runners. Older checklist references
+to one runner per package apply to the QML path. Keep reveal disabled for default
+build acceptance; its optional experimental checks are separate. Record results
+and outstanding hardware/provider checks before treating this build as supported.
