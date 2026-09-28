@@ -80,10 +80,22 @@ if [[ -d "$destination" ]]; then
 fi
 activated=true
 mv -T -- "$stage" "$destination"
-omarchy-shell shell rescanPlugins
+# A plugin directory replacement can overlap the shell's automatic rescan.
+# Retry a bounded number of times before transaction rollback; never treat an
+# IPC timeout as evidence that the new plugin was discovered.
+retry_shell() {
+  local retry
+  for ((retry=0;retry<3;retry++)); do
+    if "$@"; then return 0;fi
+    sleep 0.2
+  done
+  echo 'Core shell activation did not respond after three attempts.' >&2
+  return 1
+}
+retry_shell omarchy-shell shell rescanPlugins
 for ((attempt=0;attempt<40;attempt++)); do
   if omarchy plugin list --json | jq -e --arg id "$core_id" 'any(.[]; .id==$id)' >/dev/null; then
-    omarchy plugin enable "$core_id"
+    retry_shell omarchy plugin enable "$core_id"
     install -m755 "$root/widget" "$HOME/.local/bin/omarchy-widget"
     mkdir -p "$(dirname -- "$desktop_path")"
     install -m644 "$root/io.github.tcballard.widget-core.desktop" "$desktop_path"

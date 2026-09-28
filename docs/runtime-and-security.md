@@ -77,3 +77,25 @@ fixed provider, not a generic networking service or provider framework.
 The supervisor waits on broker socket readiness instead of waking every 20 ms. One-second housekeeping still discovers registry, desktop and runner-liveness changes; broker connections wake it immediately. Runner snapshot polling remains at one second to preserve workspace/theme response. A closed manager contributes no recurring snapshot poll. Fully event-driven desktop/theme updates are not claimed.
 
 The September 17 live baseline measured one World Clock plus a closed resident manager at 237.4 MiB mean combined PSS and 2.39% of one core. The manager Quickshell process accounted for 134.4 MiB PSS. After the manager lifecycle and supervisor-wait changes, the same desktop scenario at source `90fae72` measured 90.6 MiB combined mean PSS and 1.58% of one core: reductions of 146.7 MiB (61.8%) and 0.80 percentage points (33.7%). The host fell to 1.9 MiB PSS and 0.44% CPU; the World Clock island measured 88.7 MiB PSS and 1.14% CPU. Exactly one current-generation island remained throughout 58 samples, the manager process was absent, and no visibility binding warning occurred during the capture. These figures cover one machine and one 60-second steady-state trial; multi-package scaling still requires measurement.
+
+## Supervisor lifetime enforcement
+
+Each advanced QML worker connects to a private Unix socket held by the exact
+supervisor that created it. This socket is not mounted into the package sandbox.
+The supervisor retains the listening socket; the worker connection stays pending
+in its accept queue, so supervisor exit (including SIGKILL) closes the peer. A
+worker refuses stale startup before launching the proxy or package, checks the
+connection while waiting for proxy readiness, and checks it on its existing
+100 ms child/lease loop. Disconnect stops the worker; systemd's control-group
+kill policy removes its descendants. No additional process or timer is added.
+
+This complements `BindsTo`/`After`: those dependencies refer to a service name,
+which can become active again under a new supervisor. They cannot by themselves
+prove ownership of a particular runner generation. A socket pathname left on
+disk grants no lifetime after its listener exits. Package removal still stops
+the owned transient unit directly.
+
+`tests/runner_lifetime.py HELPER --live` exercises stale launch, supervisor
+SIGKILL, descendant cleanup and replay using unique temporary services with
+inert workloads. It does not control the installed Core service or exhaust
+resources. The CI resources job runs it alongside the disposable pressure suite.

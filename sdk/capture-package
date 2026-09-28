@@ -5,8 +5,8 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
 package=$(realpath -e -- "$1")
 [[ -d "$package" && -f "$package/widget.json" ]] || exit 2
-[[ -x /usr/bin/bwrap ]] || { echo 'Install bubblewrap and system python-pyside6 first.' >&2; exit 1; }
-/usr/bin/python3 -c 'import PySide6' || { echo 'System Python needs PySide6 (Arch: python-pyside6).' >&2; exit 1; }
+[[ -x /usr/bin/bwrap ]] || { echo 'Install bubblewrap and system PySide6 first.' >&2; exit 1; }
+/usr/bin/python3 -c 'import PySide6' || { echo 'System Python needs PySide6 (Arch: pyside6).' >&2; exit 1; }
 mkdir -p -- "$2"
 output=$(realpath -e -- "$2")
 [[ -z $(find "$output" -mindepth 1 -maxdepth 1 -print -quit) ]] || { echo 'Use an empty output directory.' >&2; exit 1; }

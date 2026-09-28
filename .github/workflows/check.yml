@@ -123,4 +123,6 @@ jobs:
           sudo systemctl start "user@${test_uid}.service"
           sudo install -Dm755 target/debug/omarchy-widget /tmp/widget-resource-ci/omarchy-widget
           sudo install -m644 tests/resources.py /tmp/widget-resource-ci/resources.py
+          sudo install -m644 tests/runner_lifetime.py /tmp/widget-resource-ci/runner_lifetime.py
           sudo -u widgettest env "XDG_RUNTIME_DIR=/run/user/${test_uid}" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${test_uid}/bus" python3 /tmp/widget-resource-ci/resources.py /tmp/widget-resource-ci/omarchy-widget --live
+          sudo -u widgettest env "XDG_RUNTIME_DIR=/run/user/${test_uid}" "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${test_uid}/bus" python3 /tmp/widget-resource-ci/runner_lifetime.py /tmp/widget-resource-ci/omarchy-widget --live

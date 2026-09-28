@@ -18,7 +18,7 @@ def until(test,seconds=20):
         if result:return result
         time.sleep(.1)
     raise AssertionError('Timed out waiting for test condition')
-workers=[];units=[];host_created=False
+workers=[];units=[];lifetimes=[];host_created=False
 with tempfile.TemporaryDirectory(prefix='widget resources $literal ') as temp:
     base=Path(temp);config=base/'core';(config/'bin').mkdir(parents=True)
     shutil.copy2(helper,config/'bin/omarchy-widget')
@@ -60,6 +60,7 @@ elif role=='tasks':
     def start(role):
         source=base/(role+'-source');source.mkdir();(source/'role').write_text(role)
         directory=base/role;directory.mkdir();(directory/'wayland.toml').write_text('fixture')
+        lifetime=socket.socket(socket.AF_UNIX);lifetime.bind(str(directory/'lifetime'));lifetime.listen(1);lifetimes.append(lifetime)
         unit=f'omarchy-widget-island-test-{role}-{os.getpid()}.service'
         args=json.loads(subprocess.check_output([str(helper),'resource-plan',unit],text=True))
         # Retain the failed memory unit long enough to inspect its actual OOM result.
@@ -117,6 +118,8 @@ elif role=='tasks':
         ctl('start',host)
         replacement=start('healthy-restart')
         old_pid=(replacement[2]/'payload.pid').read_text()
+        # The real supervisor loses this listener when its process exits.
+        lifetimes[-1].close()
         ctl('restart',host)
         replacement[1].wait(timeout=10)
         assert property(host,'ActiveState')=='active'
@@ -124,6 +127,7 @@ elif role=='tasks':
         until(lambda:not Path('/proc',old_pid).exists())
         print('PASS: restarting Core stops the old island without relaunching its stale generation')
     finally:
+        for lifetime in lifetimes:lifetime.close()
         for unit in units:ctl('stop',unit,check=False)
         if host_created:ctl('stop',host,check=False);ctl('reset-failed',host,check=False)
         for process in workers:
