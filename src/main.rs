@@ -1474,7 +1474,7 @@ fn run(args: &[String]) -> Result<Value> {
     }
     if cmd == "help" {
         return Ok(
-            json!({"commands":["repair","show INSTANCE_ID","export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME (declarative)","new-qml PATH ID NAME (isolated QML)","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":"0.0.2"}),
+            json!({"commands":["repair","show INSTANCE_ID","export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME (declarative)","new-qml PATH ID NAME (isolated QML)","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":env!("CARGO_PKG_VERSION")}),
         );
     }
     let required = match cmd {
