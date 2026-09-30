@@ -4,7 +4,7 @@
 
 A shared native desktop-widget host for Omarchy: fixed widget families, a cell occupancy grid, settings, and package management. Each widget lives in its own repository. Declarative widgets share one Core-owned renderer; advanced QML packages each run in their **own sandboxed Quickshell process**. A user service supervises rendering, management and state. An optional compatibility plugin forwards old shell commands; it loads no widget code.
 
-**v0.0.2 / API 3 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. The isolated QML runtime has a single-clock desktop capture; the new shared declarative renderer still needs live acceptance. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
+**v0.0.3 / API 3 is experimental.** The earlier 0.1.0/0.1.1 numbers were premature. This intentional version reset preserves settings; 0.1.0 is reserved for the first supported baseline. The isolated QML runtime has a single-clock desktop capture; the new shared declarative renderer still needs live acceptance. Target: Omarchy Quattro / Hyprland. The badge is a community identity label, not official approval.
 
 Core is a separate desktop application and supervised service. Omarchy's [plugin guide](https://plugins.omarchy.org/develop.html) places ordinary plugins in the shared shell and prohibits a second Quickshell process for a plugin. Core deliberately uses external package renderers to isolate widget code; its compatibility plugin is only a command bridge. Widget packages implement Core's contract, not Omarchy's shell-plugin contract. The development installer currently stores the app under that bridge's directory. This is not a claim of marketplace or upstream acceptance; supported Arch packaging and live acceptance remain release work.
 
@@ -126,7 +126,7 @@ The widget remains on its configured monitor and appears only while that monitor
 
 Trusted Core queries Hyprland's local monitor IPC and supplies bounded monitor/workspace data, cell geometry and frame metrics through snapshots. The raw compositor socket is still absent from widget sandboxes. Visibility follows the normal approximately one-second refresh, with a short shared query cache. When desktop geometry is unavailable, all instances remain unplaced and the manager reports the problem. This is cooperative presentation, not a new security restriction on hostile Wayland clients.
 
-This development branch remains **v0.0.2**. Real Hyprland shortcut activation, monitor hotplug and workspace switching need XPS acceptance. The network-widget direction is documented in [network-widgets.md](docs/network-widgets.md); network access is not enabled by this change.
+This development branch remains **v0.0.3**. Real Hyprland shortcut activation, monitor hotplug and workspace switching need XPS acceptance. The network-widget direction is documented in [network-widgets.md](docs/network-widgets.md); network access is not enabled by this change.
 
 To remove the launcher entry, delete `io.github.tcballard.widget-core.desktop` from `${XDG_DATA_HOME:-$HOME/.local/share}/applications`. This does not remove widgets or their settings.
 
@@ -138,7 +138,7 @@ Follow the [widget authoring standard](docs/widget-authoring.md) alongside the A
 
 Small, Medium and Large occupy 1×1, 2×1 and 2×2 cells. Core inherits global Hyprland gaps, border size and rounding; disabled widgets release their cells. Arrange mode previews footprints and rejects occupied drops. Different numbered workspaces can reuse cells; an all-workspace instance reserves them everywhere.
 
-Preferred monitor/cell coordinates survive monitor removal and resolution/gap changes. Core temporarily finds another available slot or marks the instance unplaced, then restores the preference when available. See [layout/API details](docs/grid-layout.md) and [verification](docs/grid-verification.md). Core remains v0.0.2; real desktop acceptance is pending.
+Preferred monitor/cell coordinates survive monitor removal and resolution/gap changes. Core temporarily finds another available slot or marks the instance unplaced, then restores the preference when available. See [layout/API details](docs/grid-layout.md) and [verification](docs/grid-verification.md). Core remains v0.0.3; real desktop acceptance is pending.
 
 
 ## Widgets manager (development)
@@ -176,7 +176,7 @@ changes have been merged into `main`, including the searchable local gallery.
 The [implementation stack](docs/implementation-stack.md) records the historical
 PR sequence and milestone verification; its draft and merge instructions describe
 that earlier work. Merging does not establish desktop acceptance or a supported
-release: Core remains experimental v0.0.2.
+release: Core remains experimental v0.0.3.
 
 Quick reveal is **disabled in the default build**. An explicit
 `experimental-reveal` Cargo feature retains the prototype and policy tests.
