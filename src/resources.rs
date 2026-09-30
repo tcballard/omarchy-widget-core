@@ -1,5 +1,6 @@
 //! systemd owns the cgroup hierarchy. Widget services are siblings of Core.
 use super::*;
+use std::os::unix::net::UnixStream;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -133,9 +134,31 @@ impl Drop for Children {
     }
 }
 
+// A systemd dependency refers to a service name, not a supervisor lifetime.
+// The private socket is never mounted into the package sandbox. A stale
+// directory cannot grant a lease: its original listening process must be alive.
+struct Lifetime(UnixStream);
+impl Lifetime {
+    fn connect(directory: &Path) -> Result<Self> {
+        let stream = UnixStream::connect(directory.join("lifetime"))
+            .map_err(|e| format!("Supervisor lifetime unavailable: {e}"))?;
+        stream.set_nonblocking(true).map_err(err)?;
+        let mut lifetime = Self(stream);
+        lifetime.check()?;
+        Ok(lifetime)
+    }
+    fn check(&mut self) -> Result<()> {
+        match self.0.read(&mut [0u8; 1]) {
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()),
+            _ => Err("Supervisor lifetime ended".into()),
+        }
+    }
+}
+
 pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
     // Fail closed before any package code or protocol parser is started.
     verify().map_err(|e| format!("Package resource preflight failed: {e}"))?;
+    let mut lifetime = Lifetime::connect(directory)?;
     let reveal_until = reveal::lease(&directory.join("reveal-lease"));
     let deadline = std::time::Instant::now()
         + Duration::from_millis(
@@ -159,6 +182,7 @@ pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
     let display = directory.join("wayland");
     let mut ready = false;
     for _ in 0..100 {
+        lifetime.check()?;
         if children.0[0].try_wait().map_err(err)?.is_some() {
             return Err("Wayland filter exited before ready".into());
         }
@@ -189,6 +213,7 @@ pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
             .map_err(err)?,
     );
     loop {
+        lifetime.check()?;
         if reveal_until > 0 && std::time::Instant::now() >= deadline {
             return Err("Reveal lease ended".into());
         }
@@ -204,6 +229,20 @@ pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn worker_lifetime_is_revoked_even_with_a_stale_socket_path() {
+        let directory = env::temp_dir().join(format!("widget-lifetime-{}", nonce()));
+        fs::create_dir(&directory).unwrap();
+        assert!(Lifetime::connect(&directory).is_err());
+        let listener = std::os::unix::net::UnixListener::bind(directory.join("lifetime")).unwrap();
+        let mut lifetime = Lifetime::connect(&directory).unwrap();
+        lifetime.check().unwrap();
+        drop(listener);
+        assert!(lifetime.check().is_err());
+        assert!(directory.join("lifetime").exists());
+        assert!(Lifetime::connect(&directory).is_err());
+        fs::remove_dir_all(directory).unwrap();
+    }
     #[test]
     fn policy_is_per_service_and_bound_to_core() {
         let args = service_args("omarchy-widget-island-test.service").unwrap();

@@ -16,10 +16,18 @@ if name=='cargo':
 elif name=='omarchy':
     if args[:2]==['plugin','list']:print(json.dumps([{'id':'io.github.tcballard.widget-core'}]))
     if args[:2]==['plugin','enable'] and os.getenv('FAIL_ENABLE'):sys.exit(1)
+    if args[:2]==['plugin','enable'] and os.getenv('RETRY_ENABLE'):
+        marker=pathlib.Path(os.environ['HOME'])/'enable-attempted'
+        if not marker.exists():marker.touch();sys.exit(1)
 elif name=='systemctl':
     if 'start' in args and os.getenv('FAIL_START'):sys.exit(1)
+elif name=='omarchy-shell' and args==['shell','rescanPlugins']:
+    if os.getenv('FAIL_RESCAN'):sys.exit(1)
+    if os.getenv('RETRY_RESCAN'):
+        marker=pathlib.Path(os.environ['HOME'])/'rescan-attempted'
+        if not marker.exists():marker.touch();sys.exit(1)
 '''
-for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE']:
+for failure in ['', 'RETRY_RESCAN', 'RETRY_ENABLE', 'FAIL_RESCAN', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE']:
     with tempfile.TemporaryDirectory(prefix='widget install ') as tmp:
         base=Path(tmp); home=base/'home with spaces';home.mkdir()
         repo=base/'source with spaces';shutil.copytree(root,repo,ignore=shutil.ignore_patterns('target','test-results'))
@@ -38,7 +46,7 @@ for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE'
         env.pop('XDG_DATA_HOME',None)
         if failure:env[failure]='1'
         result=subprocess.run(['bash',str(repo/'install-local'),'--update'],env=env,text=True,capture_output=True,cwd=repo)
-        if failure:
+        if failure.startswith('FAIL_'):
             assert result.returncode!=0,result.stdout
             assert (destination/'previous').read_text()=='old core'
             assert unit.read_text()=='old unit'
@@ -52,4 +60,4 @@ for failure in ['', 'FAIL_ENABLE', 'FAIL_START', 'FAIL_SANDBOX', 'FAIL_RESOURCE'
             assert (destination/'Commons/Color.qml').is_file()
             assert 'KillMode=control-group' in unit.read_text()
             assert 'No widget code' in (destination/'Service.qml').read_text()
-print('PASS: installer paths with spaces; complete host payload; activation/start failure restores Core, service and launcher')
+print('PASS: installer paths with spaces; transient discovery retries; persistent discovery/activation/start failure restores Core, service and launcher')

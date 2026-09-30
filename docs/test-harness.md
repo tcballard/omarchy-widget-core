@@ -75,3 +75,8 @@ Use `fail` or `blocked` with the exact symptom when appropriate. Review every it
 `report.md` separates the Rust executable, proxy executable, total installed Core payload (including bundled proxy source), and checkout release binary. Individual binaries are already included in the installed total: do not add them again. Manifests record logical and allocated file bytes, skip symlinks and deduplicate hardlinks within each measured tree. MB is decimal; MiB is binary. Shared Qt/Quickshell dependency package sizes are recorded separately by pacman, not charged again as Rust binary size.
 
 This is not a whole-system dependency closure or total user-data measurement. Widget packages, retained versions, installer backups, build caches and external shared dependencies are outside the Core payload total. Live memory is a separate measurement entirely. There is no agreed MB budget yet: establish these baselines before selecting a disk/PSS target or changing the rendering/process model. The existing 256 MiB per-package limit is a ceiling, not measured normal consumption.
+
+The non-destructive worker-lifetime regression can also run in a normal systemd
+user session: `python3 tests/runner_lifetime.py target/debug/omarchy-widget --live`.
+It creates only uniquely named temporary services with inert workloads; it does
+not stop the installed Core service or run resource-pressure tests.

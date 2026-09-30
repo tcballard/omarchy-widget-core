@@ -267,6 +267,9 @@ fn policy(args: &[String], message: &str, revealing: bool) -> Result<Value> {
 }
 
 struct Runner {
+    // Kept open, with the worker's connection pending in the accept queue.
+    // Closing this listener (including on SIGKILL) revokes the worker's lifetime.
+    _lifetime: UnixListener,
     source: PathBuf,
     serial: u64,
     reveal_until: u64,
@@ -308,6 +311,7 @@ fn launch(
     let directory = runtime_directory(base, package);
     fs::create_dir(&directory).map_err(err)?;
     fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).map_err(err)?;
+    let lifetime = UnixListener::bind(directory.join("lifetime")).map_err(err)?;
     fs::write(directory.join("reveal-lease"), reveal_until.to_string()).map_err(err)?;
     let socket = directory.join("broker");
     let listener = UnixListener::bind(&socket).map_err(err)?;
@@ -340,6 +344,7 @@ fn launch(
         .spawn()
         .map_err(err)?;
     Ok(Runner {
+        _lifetime: lifetime,
         source: source.into(),
         serial,
         reveal_until,
