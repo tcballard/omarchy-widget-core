@@ -65,7 +65,11 @@ import json, pathlib, subprocess, sys
 if sys.argv[1] == 'content-failed':
     path=pathlib.Path({str(attempts)!r})
     count=int(path.read_text())+1 if path.exists() else 1
-    path.write_text(str(count))
+    # The Qt test polls this file while the shim is running. Publish a complete
+    # counter atomically so it cannot observe an empty, truncated write.
+    pending=path.with_suffix('.pending')
+    pending.write_text(str(count))
+    pending.replace(path)
     if count<=5:
         print(json.dumps(dict(error='Registry busy; retry after the current operation finishes',code='busy')))
         sys.exit(1)
