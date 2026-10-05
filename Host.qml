@@ -49,6 +49,7 @@ Item {
     property bool managerOpen: false
     property bool snapshotReady: false
     property var weatherStates: ({})
+    property var githubStates: ({})
     property var saveStates: ({})
     property var placementErrors: ({})
     property string configuring: ""
@@ -148,6 +149,16 @@ Item {
             if(request.args[0]==="clock-times") {
                 root.clockPending=false;
                 if(success) {root.clockTimes=response.zones || {};root.sampledMinute=request.token.clockMinute;root.sampledZones=request.token.clockZones;}
+                return;
+            }
+            if(request.args[0]==="github") {
+                var current=root.entry(request.args[1]);
+                // Ignore a completion queued before a username change.
+                if(current && String(current.placement.settings.username).toLowerCase()===request.args[2].toLowerCase()) {
+                    var states=Object.assign({},root.githubStates);
+                    states[request.args[1]]={username:request.args[2].toLowerCase(),result:success ? response : {state:"unavailable",data:null,error:message}};
+                    root.githubStates=states;
+                }
                 return;
             }
             if(request.args[0]==="weather") {
@@ -306,6 +317,7 @@ Item {
                     onRemoveRequested: function(id) { root.execute(["remove-instance",id]); }
                     onPackageControlRequested: function(id,action) { root.execute(["package-control",id,action]); }
                     onRollbackRequested: function(id) { root.execute(["rollback",id]); }
+                    onGithubPermissionRequested: function(id, allowed) { root.execute(["github-permission",id,allowed ? "allow" : "deny"]); }
                     onWeatherPermissionRequested: function(id, allowed) { root.execute(["weather-permission",id,allowed ? "allow" : "deny"]); }
                     onUninstallRequested: function(id, policy) { root.execute(["uninstall",id,policy]); }
                     onArrangeRequested: { root.control("arrange"); root.shown = true;root.control("close-manager");root.managerOpen = false; }
@@ -416,6 +428,13 @@ Item {
                 readonly property var settings: window.config.settings
                 active: window.visible
                 readonly property var weather: root.weatherStates[window.modelData] || ({state:"loading",data:null,error:""})
+                readonly property var github: {
+                    var state=root.githubStates[window.modelData];
+                    return state && state.username===String(settings.username).toLowerCase() ? state.result : {state:"loading",data:null,error:""};
+                }
+                function requestGithub(username) {
+                    return active && root.execute(["github",window.modelData,String(username)]);
+                }
                 function requestWeather(latitude,longitude) {
                     return active && root.execute(["weather",window.modelData,String(latitude),String(longitude)]);
                 }

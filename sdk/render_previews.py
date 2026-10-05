@@ -34,6 +34,8 @@ Window {
         readonly property string definitionId:"main"
         readonly property var weather:({state:"unavailable",data:null,error:"Preview has no network access"})
         readonly property var saveState:({saving:false,saved:false,error:""})
+        readonly property var github:({state:"unavailable",data:null,error:"Preview has no network access"})
+        function requestGithub(username) { return false; }
         function requestWeather(latitude,longitude) { return false; }
         readonly property var theme:Color
         readonly property var metrics:Style

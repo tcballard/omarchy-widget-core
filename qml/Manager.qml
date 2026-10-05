@@ -40,6 +40,7 @@ FocusScope {
     signal duplicateRequested(string id)
     signal removeRequested(string id)
     signal uninstallRequested(string packageId, string policy)
+    signal githubPermissionRequested(string packageId, bool allowed)
     signal weatherPermissionRequested(string packageId, bool allowed)
     signal packageControlRequested(string packageId, string action)
     signal rollbackRequested(string packageId)
@@ -209,6 +210,8 @@ FocusScope {
                             ManagerButton { text:"Roll back update"; enabled:!root.busy; onClicked:root.rollbackRequested(packageCard.modelData.packageId) }
                             ManagerButton { objectName:"uninstall-"+packageCard.modelData.packageId; text:"Uninstall…"; tone:"danger"; enabled:!root.busy; onClicked:root.ask("package",packageCard.modelData.packageId,packageCard.modelData.manifest.name) }
                         }
+                        Label { visible:(packageCard.modelData.manifest.capabilities || []).indexOf("github")>=0; text:"GitHub receives this widget's username and your IP address. Public contribution counts only; no token. Access applies to this installed version."; color:Color.muted; Layout.fillWidth:true; wrapMode:Text.Wrap; font.pixelSize:Style.space(12) }
+                        ManagerButton { visible:(packageCard.modelData.manifest.capabilities || []).indexOf("github")>=0; text:packageCard.modelData.githubAllowed ? "Revoke GitHub access" : "Allow GitHub access"; enabled:!root.busy; onClicked:root.githubPermissionRequested(packageCard.modelData.packageId,!packageCard.modelData.githubAllowed) }
                         Label { visible:(packageCard.modelData.manifest.capabilities || []).indexOf("weather")>=0; text:"Weather shares this widget's coordinates with Open-Meteo. Access applies to this installed version."; color:Color.muted; Layout.fillWidth:true; wrapMode:Text.Wrap; font.pixelSize:Style.space(12) }
                         ManagerButton { visible:(packageCard.modelData.manifest.capabilities || []).indexOf("weather")>=0; text:packageCard.modelData.weatherAllowed ? "Revoke weather access" : "Allow weather access"; enabled:!root.busy; onClicked:root.weatherPermissionRequested(packageCard.modelData.packageId,!packageCard.modelData.weatherAllowed) }
                     }

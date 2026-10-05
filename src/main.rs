@@ -1,6 +1,8 @@
 mod declarative;
+mod github;
 mod grid;
 mod island;
+mod public_data;
 mod resources;
 mod reveal;
 mod sdk;
@@ -164,8 +166,8 @@ fn manifest(dir: &Path) -> Result<Value> {
     }
     if let Some(caps) = v.get("capabilities") {
         let caps = caps.as_array().ok_or("Capabilities must be an array")?;
-        if caps.len() > 1 || caps.iter().any(|c| c != "weather") {
-            return Err("Unsupported capability; only weather is available".into());
+        if caps.len() > 2 || caps.iter().any(|c| c != "weather" && c != "github") {
+            return Err("Unsupported capability; available: weather, github".into());
         }
     }
     if let Some(refresh) = v.get("refresh") {
@@ -190,6 +192,7 @@ fn manifest(dir: &Path) -> Result<Value> {
                 "settings-migrations",
                 "acknowledged-actions",
                 "shared-weather",
+                "github-contributions",
                 "frame-settings",
                 "command-dependencies",
                 "declarative-v1",
@@ -865,7 +868,7 @@ impl Registry {
                         .filter(|p| p["packageId"] == id)
                         .count();
                     catalog.push(
-                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count,"weatherAllowed":weather::authorised(self,&l,&id),"packageDisabled":l["runtime"]["packageControls"][&id]["disabled"]==true,"loadFailure":l["runtime"]["packageControls"][&id]["loadFailure"]==true,"health":if health_fresh {health["packages"][&id].clone()} else {Value::Null}}),
+                        json!({"packageId":id,"manifest":m,"directory":path,"instanceCount":count,"weatherAllowed":weather::authorised(self,&l,&id),"githubAllowed":github::authorised(self,&l,&id),"packageDisabled":l["runtime"]["packageControls"][&id]["disabled"]==true,"loadFailure":l["runtime"]["packageControls"][&id]["loadFailure"]==true,"health":if health_fresh {health["packages"][&id].clone()} else {Value::Null}}),
                     );
                     let mut found = false;
                     for (instance, p) in l["placements"].as_object().unwrap() {
@@ -1116,6 +1119,7 @@ impl Registry {
         }
         l["packages"][id]["previous"] = current;
         l["packages"][id]["weatherGrant"] = Value::Null;
+        l["packages"][id]["githubGrant"] = Value::Null;
         l["packages"][id]["checkpoint"] =
             json!({"before":before,"after":settings::checkpoint(&l["placements"],id)});
         self.commit(&mut l)?;
@@ -1466,6 +1470,9 @@ fn run(args: &[String]) -> Result<Value> {
         let r = Registry::from_env()?;
         return r.package_control(&args[1], &args[2]);
     }
+    if cmd == "github-permission" && args.len() == 3 {
+        return github::grant(&Registry::from_env()?, &args[1], &args[2]);
+    }
     if cmd == "weather-permission" && args.len() == 3 {
         return weather::grant(&Registry::from_env()?, &args[1], &args[2]);
     }
@@ -1474,7 +1481,7 @@ fn run(args: &[String]) -> Result<Value> {
     }
     if cmd == "help" {
         return Ok(
-            json!({"commands":["repair","show INSTANCE_ID","export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME (declarative)","new-qml PATH ID NAME (isolated QML)","weather-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":env!("CARGO_PKG_VERSION")}),
+            json!({"commands":["repair","show INSTANCE_ID","export-settings PACKAGE_ID","restore-settings PACKAGE_ID PATH","recover-placement INSTANCE_ID {size,monitor}","new PATH ID NAME (declarative)","new-qml PATH ID NAME (isolated QML)","weather-permission PACKAGE allow|deny","github-permission PACKAGE allow|deny","package-control PACKAGE restart|disable|enable","validate PATH","install PATH","update PATH","rollback PACKAGE_ID","list","control METHOD","add ID","create PACKAGE_ID FAMILY","duplicate INSTANCE_ID","hide INSTANCE_ID","remove-instance INSTANCE_ID","uninstall PACKAGE_ID keep|delete","save INSTANCE_ID {revision,settings}","configure INSTANCE_ID JSON (legacy)","place INSTANCE_ID JSON","workspace INSTANCE_ID all|NUMBER","remove PACKAGE_ID (legacy: deletes package and settings)"],"api":2,"version":env!("CARGO_PKG_VERSION")}),
         );
     }
     let required = match cmd {
@@ -2542,6 +2549,44 @@ mod tests {
         weather::grant(&r, "io.example.test", "allow").unwrap();
         weather::grant(&r, "io.example.test", "deny").unwrap();
         assert!(!weather::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
+    }
+    #[test]
+    fn github_grant_is_explicit_and_generation_bound() {
+        let t = Temp::new();
+        let src = t.0.join("source");
+        fixture(&src);
+        let mut m = manifest(&src).unwrap();
+        m["capabilities"] = json!(["github"]);
+        atomic_json(&src.join("widget.json"), &m).unwrap();
+        let r = Registry {
+            data: t.0.join("data"),
+            state: t.0.join("state"),
+        };
+        r.install(&src).unwrap();
+        assert!(!github::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
+        github::grant(&r, "io.example.test", "allow").unwrap();
+        assert!(github::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
+        r.deploy(&src, true).unwrap();
+        assert!(!github::authorised(
+            &r,
+            &r.layout().unwrap(),
+            "io.example.test"
+        ));
+        github::grant(&r, "io.example.test", "allow").unwrap();
+        github::grant(&r, "io.example.test", "deny").unwrap();
+        assert!(!github::authorised(
             &r,
             &r.layout().unwrap(),
             "io.example.test"

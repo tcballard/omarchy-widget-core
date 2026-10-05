@@ -29,6 +29,7 @@ Item {
     readonly property var metrics:widgetContext.metrics
     readonly property var appearance:widgetContext.appearance
     readonly property var settings:widgetContext.settings
+    readonly property var github:widgetContext.github
     readonly property var weather:widgetContext.weather
     readonly property var state:widgetContext.saveState
     readonly property bool saving:widgetContext.saving
@@ -39,7 +40,7 @@ Item {
     IpcHandler {target:"preview-inert"}
     Text {anchors.centerIn:parent;text:parent.family}
     Component.onCompleted: {
-        if(widgetContext.requestWeather(0,0)!==false || widgetContext.saveSettings({},0)!==false) throw new Error("Preview allowed a side effect");
+        if(widgetContext.requestGithub("tcballard")!==false || widgetContext.requestWeather(0,0)!==false || widgetContext.saveSettings({},0)!==false) throw new Error("Preview allowed a side effect");
         widgetContext.requestConfigure();
     }
 }'''.replace('SIDE_EFFECT', str(Path(tmp)/'unexpected-command')))

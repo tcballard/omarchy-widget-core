@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "coreApi": 3,
+  "kind": "desktop-widget",
+  "id": "io.github.tcballard.github-contributions",
+  "name": "GitHub Contributions",
+  "version": "0.0.1",
+  "entryPoint": "View.qml",
+  "settingsEntryPoint": "Settings.qml",
+  "families": [
+    "small",
+    "medium",
+    "large"
+  ],
+  "defaultFamily": "medium",
+  "defaults": {
+    "username": "tcballard",
+    "palette": "GitHub green"
+  },
+  "capabilities": [
+    "github"
+  ],
+  "requires": [
+    "acknowledged-actions",
+    "frame-settings",
+    "settings-schema",
+    "github-contributions"
+  ],
+  "settingsVersion": 1,
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "username": {
+        "type": "string",
+        "maxLength": 39
+      },
+      "palette": {
+        "type": "string",
+        "enum": [
+          "GitHub green",
+          "Theme accent"
+        ]
+      }
+    },
+    "required": [
+      "username",
+      "palette"
+    ],
+    "additionalProperties": false
+  },
+  "previews": {
+    "small": "previews/small.png",
+    "medium": "previews/medium.png",
+    "large": "previews/large.png"
+  }
+}
