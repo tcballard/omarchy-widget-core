@@ -125,7 +125,7 @@ UNIT
     systemctl --user daemon-reload
     systemctl --user enable omarchy-widget-host.service
     bash "$destination/widget" start
-    echo 'Core v0.0.3 installed with a separate widget host. Restart the shell once to replace the old in-process service: omarchy restart shell'
+    echo 'Core v0.0.4 installed with a separate widget host. Restart the shell once to replace the old in-process service: omarchy restart shell'
     echo 'After migration, only widgets need restarting: omarchy-widget restart'
     echo "Open manager: Super+Space → Widgets, or omarchy-widget manage"
     if ! bash "$destination/bind-key"; then

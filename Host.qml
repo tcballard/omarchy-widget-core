@@ -257,7 +257,7 @@ Item {
         function show(): void { root.shown = true; }
         function hide(): void { root.shown = false; root.control("finish-arrange"); }
         function arrange(): void { root.shown = true; root.control("arrange"); }
-        function status(): string { return JSON.stringify({api:2,version:"0.0.3",installed:root.installed.length,shown:root.shown,editing:root.editing,busy:operation.busy,error:root.error}); }
+        function status(): string { return JSON.stringify({api:2,version:"0.0.4",installed:root.installed.length,shown:root.shown,editing:root.editing,busy:operation.busy,error:root.error}); }
     }
     // Trusted dismissal surface. Widget code remains in its package process.
     PanelWindow {
