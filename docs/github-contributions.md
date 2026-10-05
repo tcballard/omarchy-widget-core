@@ -102,8 +102,9 @@ Core CI checks out widget commit `15f12b560eaa845b937cddd348f2f9455d36bdf4` and 
 that external consumer against the Core revision under test. Core owns the broker,
 permission UI, SDK context and provider parsing tests. Its Rust broker unit test
 uses a minimal generated package, so ordinary cargo tests need no remote checkout.
-The widget's initial CI pins Core commit `98a2c6a599a9174123282183edad0931bcf79576`;
-this is the API extension candidate, not the released v0.0.3 runtime.
+GitHub Widget v0.0.1 tests against merged Core commit
+`70712a403d6513893c0e4c6c0e9e177dfba646da`. Core v0.0.4 includes that API
+extension; the earlier v0.0.3 release does not.
 
 After extraction, standalone package integration also passed: validation/install,
 two independently saved usernames, schema rejection, hidden-instance preservation,
