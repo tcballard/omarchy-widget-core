@@ -4,6 +4,12 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 const TTL: u64 = 900_000;
+// Connection includes TLS. Keep the outer deadlines beyond curl and DNS so
+// polling cannot discard a slow, otherwise successful provider response.
+const CONNECT_TIMEOUT_SECS: u64 = 15;
+const TRANSFER_TIMEOUT_SECS: u64 = 30;
+const TRANSFER_WATCHDOG_SECS: u64 = TRANSFER_TIMEOUT_SECS + 1;
+const PENDING_TIMEOUT_MS: u64 = (3 + TRANSFER_WATCHDOG_SECS + 1) * 1000;
 #[derive(Default)]
 struct Entry {
     data: Value,
@@ -82,9 +88,9 @@ pub(crate) fn fetch(endpoint: Endpoint<'_>) -> Result<Vec<u8>> {
             "--proto",
             "=https",
             "--connect-timeout",
-            "3",
+            &CONNECT_TIMEOUT_SECS.to_string(),
             "--max-time",
-            "5",
+            &TRANSFER_TIMEOUT_SECS.to_string(),
             "--max-filesize",
             &limit.to_string(),
             "--resolve",
@@ -106,7 +112,7 @@ pub(crate) fn fetch(endpoint: Endpoint<'_>) -> Result<Vec<u8>> {
             .read_to_end(&mut bytes)
             .map(|_| bytes)
     });
-    let deadline = Instant::now() + Duration::from_secs(6);
+    let deadline = Instant::now() + Duration::from_secs(TRANSFER_WATCHDOG_SECS);
     let success = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status.success(),
@@ -187,7 +193,7 @@ impl Cache {
             self.fetch_serial = self.fetch_serial.saturating_add(1);
             e.fetch_serial = self.fetch_serial;
             e.pending = true;
-            e.pending_until = now.saturating_add(30_000);
+            e.pending_until = now.saturating_add(PENDING_TIMEOUT_MS);
             self.next_request = now.saturating_add(10_000);
             if !self.package_retry.contains_key(package) && self.package_retry.len() >= MAX_PACKAGES
             {
@@ -393,11 +399,30 @@ mod tests {
         assert!(public("1.1.1.1".parse().unwrap()));
     }
     #[test]
+    fn slow_provider_survives_polling_until_transport_finishes() {
+        let mut c = Cache::default();
+        assert!(c.request("github", "tcballard", 100, true).unwrap().1);
+        for now in [10_100, 20_100, 30_100] {
+            let (state, start) = c.request("github", "tcballard", now, true).unwrap();
+            assert!(!start);
+            assert_eq!(state["refreshing"], true);
+            assert_eq!(state["state"], "loading");
+        }
+        c.complete("tcballard", 33_100, 1, Ok(json!({"total":42})));
+        let (state, start) = c.request("github", "tcballard", 34_100, true).unwrap();
+        assert!(!start);
+        assert_eq!(state["state"], "ready");
+        assert_eq!(state["data"]["total"], 42);
+    }
+    #[test]
     fn abandoned_fetch_expires_and_late_completion_cannot_overwrite_retry() {
         let mut c = Cache::default();
         assert!(c.request("a", "x", 100, true).unwrap().1);
         let old = c.entries["x"].fetch_serial;
-        let expired = c.request("a", "x", 30101, true).unwrap().0;
+        let expired = c
+            .request("a", "x", 100 + PENDING_TIMEOUT_MS + 1, true)
+            .unwrap()
+            .0;
         assert_eq!(expired["refreshing"], false);
         assert_eq!(expired["state"], "unavailable");
         assert!(c.request("a", "x", 60101, true).unwrap().1);

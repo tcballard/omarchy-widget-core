@@ -24,7 +24,7 @@ A supervisor-wide public cache shares identical coordinates only after each
 request passes its own generation grant. It holds at most 128 locations, refreshes
 after 15 minutes, deduplicates in-flight requests and starts at most one fetch
 per 10 seconds. DNS has a bounded process timeout; HTTPS has a 64-KiB limit and
-six-second watchdog. Failure retains data and backs off for one minute. Cached
+31-second watchdog (15-second connection/TLS and 30-second transfer limits). Failure retains data and backs off for one minute. Cached
 data is volatile across Core restart. Inactive and throttled misses allocate no
 slots. Each package can admit at most 16 locations and start one fetch per minute;
 non-pending least-recently-used entries are evicted within that budget or the global

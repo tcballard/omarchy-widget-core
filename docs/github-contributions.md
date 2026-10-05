@@ -38,7 +38,7 @@ Markup drift becomes unavailable/stale, not a successful empty calendar.
 Weather's existing fixed transport/cache was extracted to `public_data.rs` and
 is exercised by both providers. DNS remains public IPv4 only, pinned into curl's
 TLS connection. No curl configuration or environment is inherited. The GitHub
-response limit is 512 KiB (weather stays 64 KiB), HTTPS has a six-second watchdog
+response limit is 512 KiB (weather stays 64 KiB), HTTPS has a 31-second watchdog (15-second connection/TLS and 30-second transfer limits)
 and DNS a two-second timeout with one-second kill grace.
 
 Each provider retains a separate bounded cache: 128 public keys, at most 16
