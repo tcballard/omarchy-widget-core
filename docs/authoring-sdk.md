@@ -110,6 +110,6 @@ runner's cgroup resource policy; only use reviewed/trusted packages.
 
 ## GitHub calendar consumer
 
-[GitHub Contributions](../widgets/github-contributions/README.md) is a complete
+[GitHub Contributions](https://github.com/tcballard/omarchy-widget-github) is a complete
 independent QML widget using a fixed public data broker, with three families,
 settings, previews and tests. See [the API extension](github-contributions.md).

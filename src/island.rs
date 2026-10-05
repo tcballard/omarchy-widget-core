@@ -840,8 +840,11 @@ mod tests {
             state: base.join("state"),
         };
         let package = "io.github.tcballard.github-contributions";
-        r.install(&Path::new(env!("CARGO_MANIFEST_DIR")).join("widgets/github-contributions"))
-            .unwrap();
+        let fixture = base.join("fixture");
+        fs::create_dir(&fixture).unwrap();
+        fs::write(fixture.join("View.qml"), "import QtQuick\nItem {}").unwrap();
+        atomic_json(&fixture.join("widget.json"), &json!({"schemaVersion":2,"kind":"desktop-widget","coreApi":3,"id":package,"name":"Broker fixture","version":"0.0.1","entryPoint":"View.qml","families":["medium"],"defaultFamily":"medium","defaults":{},"capabilities":["github"],"requires":["github-contributions"]})).unwrap();
+        r.install(&fixture).unwrap();
         r.placement(package, "add", None).unwrap();
         r.placement(package, "hide", None).unwrap();
         let source = r.source(&r.layout().unwrap(), package).unwrap();
@@ -866,11 +869,7 @@ mod tests {
         github::grant(&r, package, "deny").unwrap();
         assert!(call(package, "tcballard").is_err());
         github::grant(&r, package, "allow").unwrap();
-        r.deploy(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("widgets/github-contributions"),
-            true,
-        )
-        .unwrap();
+        r.deploy(&fixture, true).unwrap();
         assert!(call(package, "tcballard").is_err());
         fs::remove_dir_all(base).unwrap();
     }

@@ -1,7 +1,7 @@
 # GitHub contribution widget / API 3 extension
 
 The next SDK consumer is an independently installable package at
-`widgets/github-contributions`. Working scope: personal/public-profile widget;
+[tcballard/omarchy-widget-github](https://github.com/tcballard/omarchy-widget-github). Working scope: personal/public-profile widget;
 no marketplace submission or release is implied. The existing Weather broker
 and World Clock demonstrate the runtime and settings contracts being reused.
 Existing GitHub bar plugins are a different surface: this consumer exercises
@@ -74,8 +74,9 @@ Reproduce portable checks:
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo fmt --all -- --check
-python3 tests/github_widget.py
-node tests/github_model.cjs
+python3 ../omarchy-widget-github/tests/qml.py .
+node ../omarchy-widget-github/tests/model.cjs
+python3 ../omarchy-widget-github/tests/package.py target/debug/omarchy-widget
 python3 tests/preview_contract.py
 ```
 
@@ -92,3 +93,21 @@ Disconnect networking after a successful fetch; after cache expiry the old graph
 must remain visibly stale. Reconnect and verify recovery. Update the package and
 verify access must be granted again. Record the tested commit and installed Core
 version before declaring desktop acceptance.
+
+## Standalone repository
+
+The production widget, its previews and its widget-specific model/QML/package
+tests live in [omarchy-widget-github](https://github.com/tcballard/omarchy-widget-github).
+Core CI checks out widget commit `15f12b560eaa845b937cddd348f2f9455d36bdf4` and runs
+that external consumer against the Core revision under test. Core owns the broker,
+permission UI, SDK context and provider parsing tests. Its Rust broker unit test
+uses a minimal generated package, so ordinary cargo tests need no remote checkout.
+The widget's initial CI pins Core commit `98a2c6a599a9174123282183edad0931bcf79576`;
+this is the API extension candidate, not the released v0.0.3 runtime.
+
+After extraction, standalone package integration also passed: validation/install,
+two independently saved usernames, schema rejection, hidden-instance preservation,
+permission grant/revoke, update requiring re-grant, and rollback with settings kept.
+The original Core PR CI run 37266374410 passed its full Rust suite (including the
+four local EPERM-blocked socket tests), sandbox and resource-isolation jobs.
+The revised cross-repository CI is authoritative for the extracted revision.

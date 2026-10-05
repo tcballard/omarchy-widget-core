@@ -235,7 +235,7 @@ and outstanding hardware/provider checks before treating this build as supported
 
 ## GitHub Contributions (development)
 
-[GitHub Contributions](widgets/github-contributions/README.md) is the next
+[GitHub Contributions](https://github.com/tcballard/omarchy-widget-github) is the next
 independently installable SDK consumer: your public heatmap and yearly count in
 Small/Medium/Large, with editable username and GitHub green or theme colours.
 Core brokers the fixed public endpoint without a token. The widget remains an
