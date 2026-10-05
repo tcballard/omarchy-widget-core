@@ -157,3 +157,9 @@ cancel a pending registration without guessing which invisible window to close.
 Each package runner has a rolling budget of five mutation attempts per second.
 Reads do not consume it. Runners may finish arrangement, but cannot start or toggle
 global arrangement. The manager and trusted CLI own that action.
+
+## GitHub contribution extension
+
+Packages requiring `github-contributions` receive `widgetContext.github` and
+`requestGithub(username)`. Data is permissioned, public-only and host-cached;
+see [the complete boundary and signatures](github-contributions.md).

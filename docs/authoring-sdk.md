@@ -25,7 +25,7 @@ QML compiles or that its behaviour is safe. Test actual loading inside Core.
 `/usr/bin`, for example `{"commands":["date"]}`. Missing commands fail validation.
 Dependencies do not grant new permissions. QtQuick and QtQuick.Layouts are supplied
 by the runtime; additional QML imports require testing against the installed Qt.
-Core owns network access: use the optional weather service, not an HTTP client.
+Core owns network access: use the optional weather or GitHub contributions service, not an HTTP client.
 
 ## One contract
 
@@ -40,7 +40,7 @@ Core owns network access: use the optional weather service, not an HTTP client.
   becameVisible, becameHidden and suspending. A crashed/unloaded view may receive
   no final callback. Persist settings through Core; reconstruct timers from absolute
   timestamps. No author hook has authority to run outside the package sandbox.
-- Capabilities: none by default; weather is the only optional broker service.
+- Capabilities: none by default; weather and GitHub contributions are optional broker services.
   A user grants each installed generation permission explicitly.
 
 Full signatures and ownership rules: [widget-contract.md](widget-contract.md).
@@ -107,3 +107,9 @@ visibly. Use an Omarchy session for live content and actual runtime acceptance.
 member and verifies disabled side effects. CI also runs it and pinned World Clock
 through the Bubblewrap capture wrapper. The preview watchdog is not the installed
 runner's cgroup resource policy; only use reviewed/trusted packages.
+
+## GitHub calendar consumer
+
+[GitHub Contributions](https://github.com/tcballard/omarchy-widget-github) is a complete
+independent QML widget using a fixed public data broker, with three families,
+settings, previews and tests. See [the API extension](github-contributions.md).

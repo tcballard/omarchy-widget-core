@@ -68,7 +68,10 @@ fn scoped(
     args: &[String],
 ) -> Result<Value> {
     // Hold authority, ownership checks and mutation under the same registry lock.
-    let reading = matches!(args.first().map(String::as_str), Some("list" | "weather"));
+    let reading = matches!(
+        args.first().map(String::as_str),
+        Some("list" | "weather" | "github")
+    );
     let lock = if reading { r.read_lock()? } else { r.lock()? };
     let layout = if args.first().is_some_and(|op| op == "list") {
         r.display_layout()?.0
@@ -130,6 +133,28 @@ fn scoped(
                 && (p["workspace"].is_null() || p["workspace"] == d["monitors"][monitor]);
             weather::request(package, &args[2], &args[3], active)
         }
+        Some("github") if args.len() == 3 => {
+            let p = &layout["placements"][&args[1]];
+            if p["packageId"] != package
+                || !github::declared(&manifest(source)?)
+                || !github::authorised(r, &layout, package)
+            {
+                return Err("GitHub access is not allowed for this package version".into());
+            }
+            let d = workspaces::snapshot();
+            let positions = grid::resolve(&layout["placements"], &d);
+            let monitor = positions[&args[1]]["monitor"].as_str().unwrap_or("");
+            let active = layout["runtime"]["packageControls"][package]["disabled"] != true
+                && p["enabled"] == true
+                && !monitor.is_empty()
+                && (layout["runtime"]["shown"] != false
+                    || reveal::active(
+                        layout["runtime"]["revealUntil"].as_u64().unwrap_or(0),
+                        reveal::now(),
+                    ))
+                && (p["workspace"].is_null() || p["workspace"] == d["monitors"][monitor]);
+            github::request(package, &args[2], active)
+        }
         Some("content-failed")
             if args.len() == 2 && layout["placements"][&args[1]]["packageId"] == package =>
         {
@@ -184,7 +209,10 @@ fn scoped(
 struct WriteBudget(std::collections::VecDeque<Instant>);
 impl WriteBudget {
     fn admit(&mut self, args: &[String], now: Instant) -> Result<()> {
-        if matches!(args.first().map(String::as_str), Some("list" | "weather")) {
+        if matches!(
+            args.first().map(String::as_str),
+            Some("list" | "weather" | "github")
+        ) {
             return Ok(());
         }
         while self
@@ -802,6 +830,48 @@ mod tests {
             assert!(wayland_policy(&args, "{}").is_err());
         }
         assert!(wayland_policy(&[], "{}").is_err());
+    }
+    #[test]
+    fn github_broker_enforces_grant_instance_generation_and_hidden_gate() {
+        let base = env::temp_dir().join(format!("github-broker-test-{}", nonce()));
+        fs::create_dir(&base).unwrap();
+        let r = Registry {
+            data: base.join("data"),
+            state: base.join("state"),
+        };
+        let package = "io.github.tcballard.github-contributions";
+        let fixture = base.join("fixture");
+        fs::create_dir(&fixture).unwrap();
+        fs::write(fixture.join("View.qml"), "import QtQuick\nItem {}").unwrap();
+        atomic_json(&fixture.join("widget.json"), &json!({"schemaVersion":2,"kind":"desktop-widget","coreApi":3,"id":package,"name":"Broker fixture","version":"0.0.1","entryPoint":"View.qml","families":["medium"],"defaultFamily":"medium","defaults":{},"capabilities":["github"],"requires":["github-contributions"]})).unwrap();
+        r.install(&fixture).unwrap();
+        r.placement(package, "add", None).unwrap();
+        r.placement(package, "hide", None).unwrap();
+        let source = r.source(&r.layout().unwrap(), package).unwrap();
+        let call = |id: &str, name: &str| {
+            scoped(
+                &r,
+                package,
+                &source,
+                0,
+                &["github", id, name].map(str::to_owned),
+            )
+        };
+        assert!(call(package, "tcballard")
+            .unwrap_err()
+            .contains("not allowed"));
+        github::grant(&r, package, "allow").unwrap();
+        assert!(call("io.someone.else", "tcballard").is_err());
+        assert!(call(package, "https://localhost").is_err());
+        let result = call(package, "tcballard").unwrap();
+        assert_eq!(result["refreshing"], false);
+        assert_eq!(result["data"], Value::Null);
+        github::grant(&r, package, "deny").unwrap();
+        assert!(call(package, "tcballard").is_err());
+        github::grant(&r, package, "allow").unwrap();
+        r.deploy(&fixture, true).unwrap();
+        assert!(call(package, "tcballard").is_err());
+        fs::remove_dir_all(base).unwrap();
     }
     #[test]
     fn broker_scopes_reads_writes_and_generations() {

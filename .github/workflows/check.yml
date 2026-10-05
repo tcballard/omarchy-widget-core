@@ -59,6 +59,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
       - run: cargo build --locked
       - run: python3 tests/qml_smoke.py
+      - name: Fetch the pinned standalone GitHub widget SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: tcballard/omarchy-widget-github
+          ref: 15f12b560eaa845b937cddd348f2f9455d36bdf4
+          path: test-results/github-widget
+          persist-credentials: false
+      - run: python3 test-results/github-widget/tests/qml.py .
+      - run: python3 test-results/github-widget/tests/package.py target/debug/omarchy-widget
+      - run: python3 sdk/render_previews.py test-results/github-empty --package test-results/github-widget
       - run: python3 tests/lifecycle.py
       - run: python3 tests/window_lifecycle.py
       - run: python3 tests/declarative.py target/debug/omarchy-widget
@@ -94,6 +104,7 @@ jobs:
           node-version: '22'
       - run: node tests/workspace.cjs
       - run: node tests/grid.cjs
+      - run: node test-results/github-widget/tests/model.cjs
       - run: python3 tests/sandbox.py
       - run: bash -n install-local && bash -n widget && bash -n host-launch && bash -n sandbox-launch && bash -n bind-key
   wayland:
