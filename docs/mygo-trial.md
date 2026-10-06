@@ -4,7 +4,22 @@ This development branch adds a native MyGo renderer to Widget Core. Core still o
 
 The trial has its own package ID, `io.github.tcballard.github-contributions-mygo`. Your existing GitHub widget and its settings stay available for comparison. This is an experimental renderer, not a released replacement. MyGo v0.2.11 is pinned; do not upgrade it without retesting pre-realization layer-shell attachment.
 
-## Install for testing
+## Prebuilt GitHub installation
+
+The GitHub prerelease contains a complete Linux x86_64 installer archive: Core, the Wayland filter, the native host, sources and licences. No Go/Rust toolchain is required on the desktop. Download `widget-core-mygo-trial-linux-x86_64.tar.gz` and `SHA256SUMS` from the same **MyGo Core trial** prerelease.
+
+```bash
+sudo pacman -S --needed gtk3 gtk-layer-shell
+sha256sum -c SHA256SUMS
+tar -xzf widget-core-mygo-trial-linux-x86_64.tar.gz
+bash widget-core-mygo-trial/install-prebuilt
+```
+
+Run the installer as your normal desktop user. It checks every bundled file, uses the existing transactional Core installer, installs the separate trial widget, enables its public GitHub capability and opens Widgets. Repeating it preserves settings and avoids adding another active instance. Runtime requirements are the same as existing Core: Omarchy, Quickshell, Bubblewrap, systemd user resource controls, curl and jq. The installer does not install runtime packages itself.
+
+The archive can be checked without touching your installation with `bash widget-core-mygo-trial/install-prebuilt --check`. This also rejects unsupported architectures. The build workflow verifies that corrupting the native executable makes this check fail, and exercises transactional install/rollback with compiler commands made fatal.
+
+## Build from source instead
 
 Run on your Omarchy desktop. This builds and replaces the installed Core with the trial branch, using Core's existing transactional installer and backup. It does not merge either pull request.
 
@@ -24,7 +39,7 @@ omarchy-widget manage
 
 For a first Core installation, omit `--update`. Existing Core prerequisites still apply: Rust, Quickshell, Bubblewrap, systemd user resource controls, Git, curl and jq. The MyGo build requires Go 1.27.1 or newer. The initial build downloads pinned Go dependencies and builds Core's pinned Wayland filter.
 
-The CI artifact contains a Linux amd64 native host and synthetic previews for inspection. The host requires the Core sandbox and broker; do not launch it as a standalone app. The commands above build the complete installation from source.
+The smaller native-only CI artifact contains a Linux amd64 native host and synthetic previews for inspection. The host requires the Core sandbox and broker; do not launch it as a standalone app. The commands above build the complete installation from source.
 
 ## Test later
 

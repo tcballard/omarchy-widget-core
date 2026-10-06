@@ -35,3 +35,50 @@ jobs:
         with:
           name: core-mygo-linux-amd64-trial
           path: test-results/mygo
+      - uses: dtolnay/rust-toolchain@1.98.1
+      - name: Build complete precompiled installer
+        run: |
+          cargo build --locked --release
+          bash build-wayland-filter
+          bash build-trial-bundle
+      - name: Installer transaction checks with and without compilation
+        run: |
+          python3 tests/installer.py
+          WIDGET_TEST_PREBUILT=1 python3 tests/installer.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: widget-core-mygo-trial-installer-linux-x86_64
+          path: test-results/distribution
+  publish-trial:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/experiment/core-mygo-github'
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: widget-core-mygo-trial-installer-linux-x86_64
+          path: distribution
+      - name: Publish an explicitly experimental GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="mygo-trial-${GITHUB_SHA:0:12}"
+          cat > notes.md <<EOF_NOTES
+          Precompiled Linux x86_64 trial of the Core-managed MyGo GitHub widget.
+
+          Source: ${GITHUB_SHA}
+
+          Includes Widget Core, the pinned Wayland filter, native host, sources and licences. No Go or Rust compiler is needed on the desktop. Existing Core settings are preserved; Core's transactional installer saves the prior installation.
+
+          Download the tar.gz and SHA256SUMS, verify with \`sha256sum -c SHA256SUMS\`, extract, then run \`bash widget-core-mygo-trial/install-prebuilt\` as your normal desktop user. Install runtime packages first: \`sudo pacman -S --needed gtk3 gtk-layer-shell\`.
+
+          This enables public GitHub access for the separate MyGo trial widget. It does not replace the regular GitHub widget. Native headless Wayland and installer checks passed in the build workflow; live Omarchy focus, scaling and monitor acceptance remain outstanding.
+
+          Full instructions: https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_SHA}/docs/mygo-trial.md
+          EOF_NOTES
+          gh release create "$tag" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "MyGo Core trial · ${GITHUB_SHA:0:12}" --notes-file notes.md \
+            distribution/widget-core-mygo-trial-linux-x86_64.tar.gz distribution/SHA256SUMS
