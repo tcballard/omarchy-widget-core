@@ -1,0 +1,11 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const api=vm.createContext({});vm.runInContext(fs.readFileSync('qml/Declarative.js','utf8').replace('.pragma library',''),api);
+const entry={instanceId:'native-a',packageId:'native',manifest:{renderer:'mygo-github-experimental'},placement:{enabled:true}};
+const catalog=[{packageId:'native',packageDisabled:false}];
+assert.equal(api.isDeclarative(entry),false);
+assert.equal(api.generatedSettings(entry),true);
+assert.equal(api.wanted([entry],catalog,'',true),false);
+assert.equal(api.wanted([entry],catalog,'native-a',false),true);
+catalog[0].packageDisabled=true;
+assert.equal(api.wanted([entry],catalog,'native-a',true),false);
+console.log('PASS: native settings keep the manager alive without creating QML content surfaces');

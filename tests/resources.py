@@ -59,6 +59,9 @@ elif role=='tasks':
     (config/'sandbox-launch').write_text('#!/bin/bash\nconfig=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)\nexec /usr/bin/python3 "$config/payload.py" "$2"\n')
     def start(role):
         source=base/(role+'-source');source.mkdir();(source/'role').write_text(role)
+        # Renderer selection validates the same manifest used by real packages.
+        (source/'View.qml').write_text('')
+        (source/'widget.json').write_text(json.dumps({'schemaVersion':2,'coreApi':3,'kind':'desktop-widget','id':'io.example.fixture','name':'Resource fixture','version':'0.0.1','entryPoint':'View.qml','families':['small'],'defaultFamily':'small','defaults':{}}))
         directory=base/role;directory.mkdir();(directory/'wayland.toml').write_text('fixture')
         lifetime=socket.socket(socket.AF_UNIX);lifetime.bind(str(directory/'lifetime'));lifetime.listen(1);lifetimes.append(lifetime)
         unit=f'omarchy-widget-island-test-{role}-{os.getpid()}.service'

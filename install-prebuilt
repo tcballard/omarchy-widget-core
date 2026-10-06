@@ -1,0 +1,26 @@
+#!/usr/bin/bash
+# GitHub trial archive entry point. No compiler, clone, or build step.
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+[[ $# -eq 0 || ( $# -eq 1 && $1 == --check ) ]] || { echo 'Usage: bash install-prebuilt [--check]' >&2; exit 2; }
+[[ "$(uname -s)-$(uname -m)" == Linux-x86_64 ]] || { echo 'This trial requires Linux x86_64.' >&2; exit 1; }
+(cd "$root" && sha256sum --strict -c FILES.sha256 >/dev/null)
+for binary in target/release/omarchy-widget target/wl-mitm-source/target/release/wl-mitm bin/omarchy-widget-mygo; do
+  [[ -x "$root/$binary" ]] || { echo "Missing executable: $binary" >&2; exit 1; }
+done
+if [[ ${1:-} == --check ]]; then echo 'Archive checksums and Linux x86_64 executables verified.'; exit 0; fi
+printf '%s\n' 'Installing the Core-managed MyGo trial and enabling public GitHub contributions.'
+OMARCHY_WIDGET_PREBUILT=1 OMARCHY_WIDGET_EXPERIMENTAL_MYGO=1 bash "$root/install-local" --update
+core="$HOME/.local/bin/omarchy-widget"
+package=io.github.tcballard.github-contributions-mygo
+if "$core" list | jq -e --arg id "$package" 'any(.catalog[]; .packageId==$id)' >/dev/null; then
+  "$core" update "$root/examples/mygo-github"
+else
+  "$core" install "$root/examples/mygo-github"
+fi
+"$core" github-permission "$package" allow
+if ! "$core" list | jq -e --arg id "$package" 'any(.installed[]; .packageId==$id and .placement.enabled==true)' >/dev/null; then
+  "$core" add "$package"
+fi
+"$core" manage
+printf '%s\n' 'Ready: GitHub Contributions · MyGo trial. Use Widgets → Arrange to move or resize it.'

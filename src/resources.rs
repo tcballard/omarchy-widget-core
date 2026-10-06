@@ -159,6 +159,11 @@ pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
     // Fail closed before any package code or protocol parser is started.
     verify().map_err(|e| format!("Package resource preflight failed: {e}"))?;
     let mut lifetime = Lifetime::connect(directory)?;
+    let renderer = if native::is(&manifest(source)?) {
+        "mygo-github-experimental"
+    } else {
+        "qml"
+    };
     let reveal_until = reveal::lease(&directory.join("reveal-lease"));
     let deadline = std::time::Instant::now()
         + Duration::from_millis(
@@ -204,6 +209,7 @@ pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
             .arg(source)
             .arg(directory.join("broker"))
             .arg(display)
+            .env("OMARCHY_WIDGET_RENDERER", renderer)
             .env(
                 "OMARCHY_WIDGET_REVEAL",
                 if reveal_until > 0 { "1" } else { "0" },

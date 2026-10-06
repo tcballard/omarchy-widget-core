@@ -1,0 +1,17 @@
+#!/usr/bin/bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+command -v go >/dev/null || { echo 'Go 1.27.1 or newer is required for the MyGo trial.' >&2; exit 1; }
+mkdir -p "$root/bin"
+cd "$root/native/mygo"
+CGO_ENABLED=0 go build -mod=readonly -tags mygo_noinspector -trimpath \
+  -ldflags='-s -w -X github.com/egoist/mygo.production=1' -o "$root/bin/omarchy-widget-mygo" .
+mkdir -p "$root/bin/mygo-licenses"
+cp "$root/LICENSE" "$root/bin/mygo-licenses/widget-core-LICENSE"
+for module in github.com/egoist/mygo github.com/ebitengine/purego github.com/go-text/typesetting golang.org/x/image; do
+  module_dir=$(go list -m -f '{{.Dir}}' "$module")
+  name=${module//\//_}
+  for license in "$module_dir"/LICENSE* "$module_dir"/OFL*; do
+    [[ ! -f "$license" ]] || cp "$license" "$root/bin/mygo-licenses/$name-${license##*/}"
+  done
+done

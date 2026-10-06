@@ -3,7 +3,9 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 core_id=io.github.tcballard.widget-core
 destination="$HOME/.config/omarchy/plugins/$core_id"
-for command_name in cargo omarchy omarchy-shell jq qs systemctl systemd-run timeout bwrap git curl getent; do
+required_commands=(omarchy omarchy-shell jq qs systemctl systemd-run timeout bwrap curl getent)
+if [[ ${OMARCHY_WIDGET_PREBUILT:-0} != 1 ]]; then required_commands+=(cargo git); fi
+for command_name in "${required_commands[@]}"; do
   command -v "$command_name" >/dev/null || { echo "Missing command: $command_name" >&2; exit 1; }
 done
 [[ $# -eq 0 || ( $# -eq 1 && "$1" == --update ) ]] || { echo 'Usage: bash install-local [--update]' >&2; exit 1; }
@@ -11,11 +13,22 @@ done
 if [[ -e "$destination" && "${1:-}" != --update ]]; then
   echo 'Core already installed. Use bash install-local --update.' >&2; exit 1
 fi
-# The 0.1.x → 0.0.2 reset is intentional; compare contracts, not version order.
-cargo_features=()
-if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_REVEAL:-0} == 1 ]]; then cargo_features+=(--features experimental-reveal); fi
-cargo build --manifest-path "$root/Cargo.toml" --locked --release "${cargo_features[@]}"
-bash "$root/build-wayland-filter"
+if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_MYGO:-0} == 1 ]]; then
+  [[ -e /usr/lib/libgtk-layer-shell.so.0 ]] || { echo "Install gtk-layer-shell before enabling the MyGo trial." >&2; exit 1; }
+fi
+if [[ ${OMARCHY_WIDGET_PREBUILT:-0} == 1 ]]; then
+  [[ "$(uname -s)-$(uname -m)" == Linux-x86_64 ]] || { echo 'This prebuilt trial requires Linux x86_64.' >&2; exit 1; }
+  (cd "$root" && sha256sum --strict -c FILES.sha256 >/dev/null)
+  for binary in target/release/omarchy-widget target/wl-mitm-source/target/release/wl-mitm bin/omarchy-widget-mygo; do
+    [[ -x "$root/$binary" ]] || { echo "Missing prebuilt executable: $binary" >&2; exit 1; }
+  done
+else
+  cargo_features=()
+  if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_REVEAL:-0} == 1 ]]; then cargo_features+=(--features experimental-reveal); fi
+  cargo build --manifest-path "$root/Cargo.toml" --locked --release "${cargo_features[@]}"
+  if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_MYGO:-0} == 1 ]]; then bash "$root/build-mygo"; fi
+  bash "$root/build-wayland-filter"
+fi
 omarchy plugin validate "$root"
 "$root/target/release/omarchy-widget" list >/dev/null
 "$root/target/release/omarchy-widget" resource-preflight >/dev/null
@@ -66,6 +79,10 @@ trap cleanup EXIT
 cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/bind-key" "$root/host-launch" "$root/sandbox-launch" "$root/wayland-filter.toml" "$root/LICENSE" "$stage/"
 cp -R -- "$root/qml" "$root/Commons" "$root/Ui" "$stage/"
 mkdir "$stage/bin"
+if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_MYGO:-0} == 1 ]]; then
+  install -m755 "$root/bin/omarchy-widget-mygo" "$stage/bin/omarchy-widget-mygo"
+  cp -R "$root/bin/mygo-licenses" "$stage/"
+fi
 install -m755 "$root/wayland-policy" "$stage/wayland-policy"
 install -m755 "$root/target/wl-mitm-source/target/release/wl-mitm" "$stage/bin/wl-mitm"
 mkdir "$stage/wl-mitm-source"

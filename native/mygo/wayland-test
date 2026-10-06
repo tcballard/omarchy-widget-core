@@ -1,0 +1,23 @@
+#!/usr/bin/bash
+# Isolated headless compositor; never connects to an existing desktop.
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
+trial_runtime=$(mktemp -d)
+chmod 700 "$trial_runtime"
+export XDG_RUNTIME_DIR="$trial_runtime"
+unset WAYLAND_DISPLAY DISPLAY SWAYSOCK
+printf '%s\n' 'output * resolution 1280x720' > "$trial_runtime/sway.conf"
+WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman sway --unsupported-gpu -c "$trial_runtime/sway.conf" > "$trial_runtime/sway.log" 2>&1 &
+trial_compositor=$!
+cleanup() { kill "$trial_compositor" 2>/dev/null || true; cat "$trial_runtime/sway.log"; rm -rf -- "$trial_runtime"; }
+trap cleanup EXIT
+for ((attempt=0;attempt<100;attempt++)); do
+  for socket in "$trial_runtime"/wayland-*; do
+    if [[ -S "$socket" ]]; then export WAYLAND_DISPLAY="${socket##*/}";break 2;fi
+  done
+  kill -0 "$trial_compositor" || exit 1
+  sleep .1
+done
+[[ -n ${WAYLAND_DISPLAY:-} ]] || { echo 'Headless compositor unavailable.' >&2; exit 1; }
+cd "$root/native/mygo"
+MYGO_LIVE_BINARY="$root/bin/omarchy-widget-mygo" go test -race -v -run TestWaylandLayerLifecycle .

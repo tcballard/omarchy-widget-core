@@ -58,6 +58,9 @@ while True:time.sleep(1)
         return process
 
     def start(directory):
+        # Renderer selection validates the same manifest used by real packages.
+        (directory/'View.qml').write_text('')
+        (directory/'widget.json').write_text(json.dumps({'schemaVersion':2,'coreApi':3,'kind':'desktop-widget','id':'io.example.fixture','name':'Resource fixture','version':'0.0.1','entryPoint':'View.qml','families':['small'],'defaultFamily':'small','defaults':{}}))
         unit = f'omarchy-widget-island-lifetime-{os.getpid()}-{len(units)}.service'
         args = json.loads(subprocess.check_output([str(helper), 'resource-plan', unit], text=True))
         # Only the test's fake supervisor owns these fixtures. Do not depend on

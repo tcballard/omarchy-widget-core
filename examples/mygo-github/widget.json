@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 2,
+  "coreApi": 3,
+  "kind": "desktop-widget",
+  "id": "io.github.tcballard.github-contributions-mygo",
+  "name": "GitHub Contributions · MyGo trial",
+  "version": "0.0.1",
+  "families": [
+    "small",
+    "medium",
+    "large"
+  ],
+  "defaultFamily": "medium",
+  "defaults": {
+    "username": "tcballard",
+    "palette": "GitHub green"
+  },
+  "capabilities": [
+    "github"
+  ],
+  "requires": [
+    "acknowledged-actions",
+    "frame-settings",
+    "settings-schema",
+    "github-contributions"
+  ],
+  "settingsVersion": 1,
+  "settingsSchema": {
+    "type": "object",
+    "properties": {
+      "username": {
+        "type": "string",
+        "maxLength": 39
+      },
+      "palette": {
+        "type": "string",
+        "enum": [
+          "GitHub green",
+          "Theme accent"
+        ]
+      }
+    },
+    "required": [
+      "username",
+      "palette"
+    ],
+    "additionalProperties": false
+  },
+  "renderer": "mygo-github-experimental",
+  "settingsUi": [
+    {
+      "key": "username",
+      "label": "GitHub username",
+      "type": "text"
+    },
+    {
+      "key": "palette",
+      "label": "Colours",
+      "type": "choice"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import json,os,pathlib,sys
 name=pathlib.Path(sys.argv[0]).name
 args=sys.argv[1:]
 if name=='cargo':
+    if os.getenv('FAIL_IF_BUILD'):sys.exit(99)
     manifest=pathlib.Path(args[args.index('--manifest-path')+1])
     helper=manifest.parent/'target/release/omarchy-widget'
     helper.parent.mkdir(parents=True,exist_ok=True)
@@ -44,6 +45,14 @@ for failure in ['', 'RETRY_RESCAN', 'RETRY_ENABLE', 'FAIL_RESCAN', 'FAIL_ENABLE'
         desktop.parent.mkdir(parents=True);desktop.write_text('old desktop entry')
         env={**os.environ,'HOME':str(home),'PATH':str(commands)+':'+os.environ['PATH']}
         env.pop('XDG_DATA_HOME',None)
+        if os.getenv('WIDGET_TEST_PREBUILT'):
+            # Prepare fixture executables, then make any build invocation fatal.
+            subprocess.run([str(commands/'cargo'),'build','--manifest-path',str(repo/'Cargo.toml')],env=env,check=True)
+            proxy=repo/'target/wl-mitm-source/target/release/wl-mitm';proxy.parent.mkdir(parents=True);proxy.write_text('fixture');proxy.chmod(0o755)
+            native=repo/'bin/omarchy-widget-mygo';native.parent.mkdir(exist_ok=True);native.write_text('fixture');native.chmod(0o755)
+            subprocess.run(['bash','-c',"sha256sum target/release/omarchy-widget target/wl-mitm-source/target/release/wl-mitm bin/omarchy-widget-mygo > FILES.sha256"],cwd=repo,check=True)
+            (repo/'build-wayland-filter').write_text('#!/usr/bin/bash\nexit 99\n')
+            env['OMARCHY_WIDGET_PREBUILT']='1';env['FAIL_IF_BUILD']='1'
         if failure:env[failure]='1'
         result=subprocess.run(['bash',str(repo/'install-local'),'--update'],env=env,text=True,capture_output=True,cwd=repo)
         if failure.startswith('FAIL_'):

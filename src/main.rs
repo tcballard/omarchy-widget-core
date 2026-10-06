@@ -2,6 +2,7 @@ mod declarative;
 mod github;
 mod grid;
 mod island;
+mod native;
 mod public_data;
 mod resources;
 mod reveal;
@@ -85,6 +86,8 @@ fn manifest(dir: &Path) -> Result<Value> {
     let canonical = dir.canonicalize().map_err(err)?;
     if declarative::is(&v) {
         declarative::contract(&v)?;
+    } else if native::is(&v) {
+        native::contract(&v)?;
     } else {
         if v.get("renderer").is_some_and(|x| x != "qml") {
             return Err("Unknown renderer".into());

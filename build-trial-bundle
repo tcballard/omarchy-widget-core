@@ -1,0 +1,31 @@
+#!/usr/bin/bash
+# Run after building release Core, the pinned Wayland filter and MyGo host.
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+cd "$root"
+[[ "$(uname -s)-$(uname -m)" == Linux-x86_64 ]] || exit 1
+output="$root/test-results/distribution"
+stage=$(mktemp -d)
+trap 'rm -rf -- "$stage"' EXIT
+bundle="$stage/widget-core-mygo-trial"
+mkdir -p "$bundle" "$output"
+git archive HEAD | tar -x -C "$bundle"
+mkdir -p "$bundle/target/release" "$bundle/target/wl-mitm-source/target/release" "$bundle/bin"
+install -m755 target/release/omarchy-widget "$bundle/target/release/omarchy-widget"
+install -m755 target/wl-mitm-source/target/release/wl-mitm "$bundle/target/wl-mitm-source/target/release/wl-mitm"
+install -m755 bin/omarchy-widget-mygo "$bundle/bin/omarchy-widget-mygo"
+cp -R bin/mygo-licenses "$bundle/bin/"
+# GPL proxy sources, generated protocol inputs and licence accompany the binary.
+tar -C target/wl-mitm-source --exclude=./target --exclude=./.git -cf - . | tar -C "$bundle/target/wl-mitm-source" -xf -
+git rev-parse HEAD > "$bundle/SOURCE_COMMIT"
+(cd "$bundle" && find . -type f ! -name FILES.sha256 -print0 | sort -z | xargs -0 sha256sum > FILES.sha256)
+bash "$bundle/install-prebuilt" --check
+# A corrupted executable must be rejected before any installed state is touched.
+printf corrupt >> "$bundle/bin/omarchy-widget-mygo"
+if bash "$bundle/install-prebuilt" --check >/dev/null 2>&1; then echo 'Checksum guard failed.' >&2; exit 1; fi
+install -m755 bin/omarchy-widget-mygo "$bundle/bin/omarchy-widget-mygo"
+bash "$bundle/install-prebuilt" --check
+archive=widget-core-mygo-trial-linux-x86_64.tar.gz
+tar -C "$stage" -czf "$output/$archive" widget-core-mygo-trial
+(cd "$output" && sha256sum "$archive" > SHA256SUMS)
+echo "$output/$archive"

@@ -1,11 +1,13 @@
 .pragma library
 function isDeclarative(entry) { return !!entry && entry.manifest.renderer === "declarative"; }
+function isNative(entry) { return !!entry && entry.manifest.renderer === "mygo-github-experimental"; }
+function generatedSettings(entry) { return isDeclarative(entry) || isNative(entry); }
 function enabled(entry,catalog) {
     for(var i=0;i<catalog.length;i++)if(catalog[i].packageId===entry.packageId)return !catalog[i].packageDisabled;
     return false;
 }
 function wanted(entries,catalog,edit,shown) {
-    return entries.some(function(e){return isDeclarative(e) && enabled(e,catalog) && ((shown && e.placement && e.placement.enabled) || e.instanceId===edit);});
+    return entries.some(function(e){return enabled(e,catalog) && ((isDeclarative(e) && shown && e.placement && e.placement.enabled) || (generatedSettings(e) && e.instanceId===edit));});
 }
 function resolve(binding,settings,item) {
     if(typeof binding==="string")return binding;
