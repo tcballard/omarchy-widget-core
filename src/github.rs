@@ -124,11 +124,14 @@ pub(crate) fn project(html: &str, login: &str) -> Result<Value> {
             return Err("Invalid calendar cell".into());
         }
     }
-    if !(365..=366).contains(&days.len()) {
+    if !(365..=371).contains(&days.len()) {
         return Err("Incomplete annual contribution calendar".into());
     }
     let first = *days.keys().next().unwrap();
     let last = *days.keys().next_back().unwrap();
+    if days.len() > 366 && (first + 4).rem_euclid(7) != 0 {
+        return Err("Padded contribution calendar must start on Sunday".into());
+    }
     if last - first + 1 != days.len() as i64 {
         return Err("Contribution calendar has gaps".into());
     }
@@ -236,6 +239,33 @@ mod tests {
         ] {
             assert!(project(&bad, "tcballard").is_err());
         }
+    }
+    #[test]
+    fn accepts_sunday_padding_but_rejects_extra_weeks_and_wrong_start() {
+        fn cell(date: &str) -> String {
+            format!("<td id=\"contribution-day-component-{date}\" data-date=\"{date}\" data-level=\"1\"></td><tool-tip for=\"contribution-day-component-{date}\">1 contribution on day.</tool-tip>")
+        }
+        let padded = format!(
+            "{}{}{}{}",
+            cell("2024-12-29"),
+            cell("2024-12-30"),
+            cell("2024-12-31"),
+            fixture()
+        );
+        assert_eq!(
+            project(&padded, "tcballard").unwrap()["days"]
+                .as_array()
+                .unwrap()
+                .len(),
+            368
+        );
+        let monday = format!("{}{}{}", cell("2024-12-30"), cell("2024-12-31"), fixture());
+        assert!(project(&monday, "tcballard").is_err());
+        let mut long = padded;
+        for date in ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"] {
+            long.push_str(&cell(date));
+        }
+        assert!(project(&long, "tcballard").is_err());
     }
     #[test]
     #[ignore = "Opt-in real fixed endpoint; requires public DNS/HTTPS"]

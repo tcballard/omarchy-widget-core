@@ -1,0 +1,37 @@
+name: MyGo Core trial
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: native/mygo/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y libgtk-3-0t64 libgtk-layer-shell0 sway dbus-x11 fonts-dejavu-core
+      - run: go -C native/mygo test -race -v ./...
+      - run: go -C native/mygo vet ./...
+      - run: go -C native/mygo mod verify
+      - run: bash build-mygo
+      - name: Real GTK layer surfaces in isolated headless Wayland
+        run: dbus-run-session -- bash native/mygo/wayland-test
+      - name: Core-sized synthetic previews and checksums
+        run: |
+          mkdir -p test-results/mygo
+          cp bin/omarchy-widget-mygo test-results/mygo/
+          cp -R bin/mygo-licenses test-results/mygo/
+          for size in small medium large; do
+            bin/omarchy-widget-mygo --size "$size" --render "test-results/mygo/synthetic-$size.png"
+          done
+          cp docs/mygo-trial.md test-results/mygo/README.md
+          cd test-results/mygo
+          sha256sum omarchy-widget-mygo synthetic-*.png > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-mygo-linux-amd64-trial
+          path: test-results/mygo

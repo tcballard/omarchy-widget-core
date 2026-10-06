@@ -131,14 +131,14 @@ Item {
         if(configuring!=="") { editorError="Save or cancel this editor before configuring another widget."; return; }
         if(saveStates[id] && saveStates[id].saving) { error="This widget is still saving. Please retry after it finishes."; return; }
         var item=entry(id);
-        if(!item || !item.placement || (!item.manifest.settingsEntryPoint && !Declarative.isDeclarative(item))) { error="This widget has no available settings editor."; return; }
+        if(!item || !item.placement || (!item.manifest.settingsEntryPoint && !Declarative.generatedSettings(item))) { error="This widget has no available settings editor."; return; }
         settingsGeneration++;
         editorError="";
         var states=Object.assign({},saveStates); delete states[id]; saveStates=states;
         settingsContext.draftSettings=JSON.parse(JSON.stringify(item.placement.settings));
         settingsContext.revision=item.placement.revision;
         configuring=id;
-        if(Declarative.isDeclarative(item)) settingsLoader.setSource(Qt.resolvedUrl("qml/DeclarativeSettings.qml"),{settingsContext:settingsContext,definition:item.manifest});
+        if(Declarative.generatedSettings(item)) settingsLoader.setSource(Qt.resolvedUrl("qml/DeclarativeSettings.qml"),{settingsContext:settingsContext,definition:item.manifest});
         else settingsLoader.setSource(fileUrl(item.directory,item.manifest.settingsEntryPoint),{settingsContext:settingsContext});
         return true;
     }
@@ -220,7 +220,7 @@ Item {
                         root.acknowledgeClose();
                     }
                     if(root.configuring!=="" && (!edit || edit.instance!==root.configuring || String(edit.serial)!==root.editSerial)) root.closeSettings();
-                    if(!root.pendingClose && root.configuring==="" && edit && (!root.managerRole || Declarative.isDeclarative(root.entry(edit.instance)))) {
+                    if(!root.pendingClose && root.configuring==="" && edit && (!root.managerRole || Declarative.generatedSettings(root.entry(edit.instance)))) {
                         if(root.openSettings(edit.instance)) root.editSerial=String(edit.serial);
                     }
                 }
@@ -383,7 +383,7 @@ Item {
         }
     }
     Variants {
-        model: root.installed.filter(function(w) { return w.placement && w.placement.enabled && (root.managerRole ? Declarative.isDeclarative(w) && Declarative.enabled(w,root.catalog) : !Declarative.isDeclarative(w)); }).map(function(w) { return w.instanceId; })
+        model: root.installed.filter(function(w) { return w.placement && w.placement.enabled && (root.managerRole ? Declarative.isDeclarative(w) && Declarative.enabled(w,root.catalog) : !Declarative.isDeclarative(w) && !Declarative.isNative(w)); }).map(function(w) { return w.instanceId; })
         PanelWindow {
             id: window
             required property string modelData

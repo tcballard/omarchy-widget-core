@@ -104,6 +104,7 @@ jobs:
           node-version: '22'
       - run: node tests/workspace.cjs
       - run: node tests/grid.cjs
+      - run: node tests/native-settings.cjs
       - run: node test-results/github-widget/tests/model.cjs
       - run: python3 tests/sandbox.py
       - run: bash -n install-local && bash -n widget && bash -n host-launch && bash -n sandbox-launch && bash -n bind-key

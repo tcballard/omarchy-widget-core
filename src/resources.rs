@@ -205,6 +205,14 @@ pub fn worker(config: &Path, source: &Path, directory: &Path) -> Result<Value> {
             .arg(directory.join("broker"))
             .arg(display)
             .env(
+                "OMARCHY_WIDGET_RENDERER",
+                if native::is(&manifest(source)?) {
+                    "mygo-github-experimental"
+                } else {
+                    "qml"
+                },
+            )
+            .env(
                 "OMARCHY_WIDGET_REVEAL",
                 if reveal_until > 0 { "1" } else { "0" },
             )

@@ -15,6 +15,10 @@ fi
 cargo_features=()
 if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_REVEAL:-0} == 1 ]]; then cargo_features+=(--features experimental-reveal); fi
 cargo build --manifest-path "$root/Cargo.toml" --locked --release "${cargo_features[@]}"
+if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_MYGO:-0} == 1 ]]; then
+  [[ -e /usr/lib/libgtk-layer-shell.so.0 ]] || { echo "Install gtk-layer-shell before enabling the MyGo trial." >&2; exit 1; }
+  bash "$root/build-mygo"
+fi
 bash "$root/build-wayland-filter"
 omarchy plugin validate "$root"
 "$root/target/release/omarchy-widget" list >/dev/null
@@ -66,6 +70,10 @@ trap cleanup EXIT
 cp -- "$root/manifest.json" "$root/Service.qml" "$root/Host.qml" "$root/shell.qml" "$root/widget" "$root/bind-key" "$root/host-launch" "$root/sandbox-launch" "$root/wayland-filter.toml" "$root/LICENSE" "$stage/"
 cp -R -- "$root/qml" "$root/Commons" "$root/Ui" "$stage/"
 mkdir "$stage/bin"
+if [[ ${OMARCHY_WIDGET_EXPERIMENTAL_MYGO:-0} == 1 ]]; then
+  install -m755 "$root/bin/omarchy-widget-mygo" "$stage/bin/omarchy-widget-mygo"
+  cp -R "$root/bin/mygo-licenses" "$stage/"
+fi
 install -m755 "$root/wayland-policy" "$stage/wayland-policy"
 install -m755 "$root/target/wl-mitm-source/target/release/wl-mitm" "$stage/bin/wl-mitm"
 mkdir "$stage/wl-mitm-source"

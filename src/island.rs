@@ -415,7 +415,7 @@ pub fn supervise(config: &Path) -> Result<Value> {
                     manager = None;
                     if let Ok(snapshot) = r.snapshot() {
                         for entry in snapshot["catalog"].as_array().into_iter().flatten() {
-                            if declarative::is(&entry["manifest"]) {
+                            if native::settings(&entry["manifest"]) {
                                 if let Some(id) = entry["packageId"].as_str() {
                                     let _ = r.clear_dead_editor(Some(id));
                                 }
@@ -660,10 +660,11 @@ fn manager_required(snapshot: &Value) -> bool {
             .into_iter()
             .flatten()
             .any(|entry| {
-                declarative::is(&entry["manifest"])
-                    && ((entry["placement"]["enabled"] == true
-                        && snapshot["runtime"]["shown"] != false)
-                        || entry["instanceId"] == snapshot["runtime"]["edit"]["instance"])
+                ((declarative::is(&entry["manifest"])
+                    && entry["placement"]["enabled"] == true
+                    && snapshot["runtime"]["shown"] != false)
+                    || (native::settings(&entry["manifest"])
+                        && entry["instanceId"] == snapshot["runtime"]["edit"]["instance"]))
                     && snapshot["runtime"]["packageControls"]
                         [entry["packageId"].as_str().unwrap_or("")]["disabled"]
                         != true
@@ -724,6 +725,8 @@ mod tests {
         snapshot["installed"][0]["placement"]["enabled"] = json!(false);
         assert!(!manager_required(&snapshot));
         snapshot["runtime"]["edit"] = json!({"instance":"clock-a"});
+        assert!(manager_required(&snapshot));
+        snapshot["installed"][0]["manifest"]["renderer"] = json!("mygo-github-experimental");
         assert!(manager_required(&snapshot));
         snapshot["installed"][0]["manifest"]["renderer"] = json!("qml");
         assert!(!manager_required(&snapshot));

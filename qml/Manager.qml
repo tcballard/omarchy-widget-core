@@ -267,7 +267,7 @@ FocusScope {
                     }
                     Flow {
                         Layout.fillWidth:true; spacing:Style.space(6)
-                        ManagerButton { objectName:"configure-"+instanceCard.modelData.instanceId; text:"Settings"; tone:"primary"; visible:instanceCard.available && (!!instanceCard.modelData.manifest.settingsEntryPoint || instanceCard.modelData.manifest.renderer==="declarative"); enabled:!root.busy; onClicked:root.configureRequested(instanceCard.modelData.instanceId) }
+                        ManagerButton { objectName:"configure-"+instanceCard.modelData.instanceId; text:"Settings"; tone:"primary"; visible:instanceCard.available && (!!instanceCard.modelData.manifest.settingsEntryPoint || ["declarative","mygo-github-experimental"].indexOf(instanceCard.modelData.manifest.renderer)>=0); enabled:!root.busy; onClicked:root.configureRequested(instanceCard.modelData.instanceId) }
                         ManagerButton { objectName:"toggle-"+instanceCard.modelData.instanceId; text:instanceCard.modelData.placement.enabled ? "Hide" : "Show"; visible:instanceCard.available; enabled:!root.busy; onClicked:root.toggleRequested(instanceCard.modelData.instanceId,!instanceCard.modelData.placement.enabled) }
                         ManagerButton { objectName:"instance-details-"+instanceCard.modelData.instanceId; text:instanceCard.expanded ? "Less  −" : "More  +"; accessibleText:(instanceCard.expanded ? "Hide options for " : "More options for ")+instanceCard.modelData.manifest.name; tone:"quiet"; onClicked:root.toggleDetails("instance",instanceCard.modelData.instanceId) }
                     }

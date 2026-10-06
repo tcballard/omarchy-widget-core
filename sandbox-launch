@@ -32,4 +32,10 @@ if [[ "$mode" == check ]]; then exec /usr/bin/bwrap "${args[@]}" -- /usr/bin/tru
 [[ -d "$2" && ! -L "$2" && -S "$3" && ! -L "$3" && -S "$4" && ! -L "$4" ]] || { echo 'Runner package or capability socket unavailable.' >&2; exit 1; }
 args+=(--ro-bind "$2" /widget --ro-bind "$3" /run/widget-core/broker
        --ro-bind "$4" /run/widget-core/wayland-0 --setenv WAYLAND_DISPLAY wayland-0)
+if [[ "${OMARCHY_WIDGET_RENDERER:-qml}" == mygo-github-experimental ]]; then
+  [[ -x "$config/bin/omarchy-widget-mygo" ]] || { echo 'Install Core with OMARCHY_WIDGET_EXPERIMENTAL_MYGO=1 first.' >&2; exit 1; }
+  args+=(--ro-bind "$config/bin/omarchy-widget-mygo" /app/bin/omarchy-widget-mygo
+         --setenv GDK_BACKEND wayland --setenv MYGO_GPU 0 --setenv NO_AT_BRIDGE 1)
+  exec /usr/bin/bwrap "${args[@]}" -- /app/bin/omarchy-widget-mygo
+fi
 exec /usr/bin/bwrap "${args[@]}" -- /usr/bin/qs --no-duplicate -p /app

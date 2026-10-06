@@ -14,6 +14,8 @@ Start with [the declarative contract](docs/declarative-widgets.md) for lightweig
 
 See [compatibility](docs/compatibility.md) and [review remediation](docs/review-remediation.md) for the current contract and remaining acceptance gates.
 
+The optional [Core-managed MyGo GitHub trial](docs/mygo-trial.md) has separate installation and rollback instructions.
+
 ## Install or upgrade Core
 
 Requires Omarchy, Quickshell (`qs`), systemd 254+ user services with cgroup v2 CPU/memory/pids controls, jq, Bubblewrap (`bubblewrap`), Git, curl, getent and a current stable Rust toolchain (Core requires 1.89+). The installer also builds a pinned wl-mitm Wayland proxy. The installer checks namespace support and actual resource enforcement before replacing the existing installation. There is no unsandboxed fallback. From this checkout:
