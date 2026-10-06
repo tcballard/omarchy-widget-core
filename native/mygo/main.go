@@ -32,6 +32,9 @@ type surface struct {
 	dragging bool
 	dx, dy   float32
 }
+
+func (s *surface) cancelDrag() { s.dragging = false; s.dx = 0; s.dy = 0 }
+
 type host struct {
 	api      *layerAPI
 	windows  map[string]*surface
@@ -50,6 +53,7 @@ func (h *host) action(args ...string) {
 func (h *host) apply(r result) {
 	if r.err != nil {
 		for _, s := range h.windows {
+			s.cancelDrag()
 			s.window.Hide()
 			s.shown = false
 		}
@@ -72,10 +76,14 @@ func (h *host) apply(r result) {
 				log.Fatal(err)
 			}
 			s.window.OnClose(func(ev *mygo.CloseEvent) { ev.PreventDefault(); h.action("hide", s.entry.InstanceID) })
+			s.window.OnBlur(s.cancelDrag)
 		}
 		s.entry = e
 		s.error = r.actionError
 		s.data = r.data[e.InstanceID]
+		if !r.snapshot.Runtime.Editing {
+			s.cancelDrag()
+		}
 		if active(r.snapshot, e, h.reveal) {
 			g := *e.Effective
 			m := h.api.findMonitor(g.Monitor)
@@ -90,16 +98,15 @@ func (h *host) apply(r result) {
 					s.shown = true
 				}
 			} else {
+				s.cancelDrag()
 				s.window.Hide()
 				s.shown = false
 				log.Printf("waiting for connector %q", g.Monitor)
 			}
 		} else {
+			s.cancelDrag()
 			s.window.Hide()
 			s.shown = false
-			s.dragging = false
-			s.dx = 0
-			s.dy = 0
 		}
 		s.window.Update(func() {})
 	}
