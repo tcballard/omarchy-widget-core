@@ -162,9 +162,18 @@ Item {
                 return;
             }
             if(request.args[0]==="weather") {
-                var weather=Object.assign({},root.weatherStates);
-                weather[request.args[1]]=success ? response : {state:"unavailable",data:null,error:message};
-                root.weatherStates=weather; return;
+                var current=root.entry(request.args[1]);
+                var token=request.token;
+                // A reply belongs to the settings and package that requested it.
+                if(current && current.placement && token
+                    && current.directory===token.weatherSource
+                    && current.placement.revision===token.weatherRevision) {
+                    var weather=Object.assign({},root.weatherStates);
+                    weather[request.args[1]]={source:token.weatherSource,revision:token.weatherRevision,
+                        result:success ? response : {state:"unavailable",data:null,error:message}};
+                    root.weatherStates=weather;
+                }
+                return;
             }
             if(request.token && request.token.delivery) {
                 if(request.token.delivery==="close" && root.pendingClose && root.pendingClose.serial===request.token.serial) {
@@ -398,7 +407,7 @@ Item {
             property real positionY: effective ? effective.y : 0
             property bool moving: false
             readonly property string geometryKey: JSON.stringify({effective:effective,grid:grid,workspace:config.workspace})
-            onGeometryKeyChanged: { moving=false; resetPosition(); }
+            onGeometryKeyChanged: { if(frame)frame.cancelMove(); moving=false; resetPosition(); }
             function resetPosition() { positionX=effective ? effective.x : 0; positionY=effective ? effective.y : 0; }
             readonly property var target: grid ? Grid.target(positionX,positionY,sizeName,effective.monitor,config.workspace,grid) : null
             readonly property bool validTarget: !!target && Grid.valid(target,grid,root.occupancy.filter(function(_,i) { return i!==entry.occupancyIndex; }))
@@ -419,6 +428,7 @@ Item {
             // No compositor command socket is exposed to the sandbox.
             // Bottom-layer surfaces remain behind fullscreen windows.
             visible: (root.shown || root.revealRunner) && effective !== null && selectedScreen !== null && Workspace.visible(config.workspace, selectedScreen ? selectedScreen.name : "", root.desktop)
+            onVisibleChanged: if(!visible) { if(frame)frame.cancelMove(); moving=false; resetPosition(); }
             function place(size, monitorName) {
                 if(!target)return false;
                 return root.execute(["place", modelData, JSON.stringify({column:target.column,row:target.row,monitor:monitorName,size:size})]);
@@ -427,7 +437,11 @@ Item {
                 id: context
                 readonly property var settings: window.config.settings
                 active: window.visible
-                readonly property var weather: root.weatherStates[window.modelData] || ({state:"loading",data:null,error:""})
+                readonly property var weather: {
+                    var state=root.weatherStates[window.modelData];
+                    return state && window.entry && state.source===window.entry.directory && state.revision===settingsRevision
+                        ? state.result : {state:"loading",data:null,error:""};
+                }
                 readonly property var github: {
                     var state=root.githubStates[window.modelData];
                     return state && state.username===String(settings.username).toLowerCase() ? state.result : {state:"loading",data:null,error:""};
@@ -436,7 +450,8 @@ Item {
                     return active && root.execute(["github",window.modelData,String(username)]);
                 }
                 function requestWeather(latitude,longitude) {
-                    return active && root.execute(["weather",window.modelData,String(latitude),String(longitude)]);
+                    return active && root.execute(["weather",window.modelData,String(latitude),String(longitude)],
+                        {weatherSource:window.entry.directory,weatherRevision:settingsRevision});
                 }
                 readonly property var theme: Color
                 readonly property var metrics: Style
@@ -456,6 +471,7 @@ Item {
                 function saveSettings(value, revision) { return root.save(window.modelData,value,revision === undefined ? settingsRevision : revision, true); }
             }
             Core.WidgetFrame {
+                id: frame
                 anchors.fill: parent
                 title: window.metadata.name
                 appearance: context.appearance
@@ -471,12 +487,14 @@ Item {
                 onEditRequested: root.control("finish-arrange")
                 onEscapeRequested: root.control("finish-arrange")
                 onHideRequested: root.execute(["hide", window.modelData])
-                onMoved: function(dx,dy) { window.moving=true; window.positionX += dx; window.positionY += dy; }
+                onMoved: function(dx,dy) { if(dx===0 && dy===0)return; window.moving=true; window.positionX += dx; window.positionY += dy; }
                 onFinishedMoving: {
+                    if(!window.moving)return;
                     if(window.validTarget) window.place(window.sizeName,window.effective.monitor);
                     else { var errors=Object.assign({},root.placementErrors);errors[window.modelData]="Those cells are unavailable; placement unchanged";root.placementErrors=errors; }
                     window.moving=false;window.resetPosition();
                 }
+                onCanceledMoving: { window.moving=false;window.resetPosition(); }
                 onSizeRequested: { var sizes=window.metadata.families; window.place(sizes[(sizes.indexOf(window.sizeName)+1)%sizes.length],window.effective.monitor); }
                 onMonitorRequested: { var screens=Quickshell.screens; if(screens.length) window.place(window.sizeName,screens[(screens.indexOf(window.screen)+1)%screens.length].name); }
                 Loader {

@@ -71,6 +71,7 @@ jobs:
       - run: python3 sdk/render_previews.py test-results/github-empty --package test-results/github-widget
       - run: python3 tests/lifecycle.py
       - run: python3 tests/window_lifecycle.py
+      - run: python3 tests/interaction_lifetimes.py
       - run: python3 tests/declarative.py target/debug/omarchy-widget
       - run: python3 tests/declarative_controller.py target/debug/omarchy-widget
       - run: python3 sdk/render_previews.py test-results/declarative-previews --package examples/declarative-clock

@@ -12,10 +12,11 @@ Item {
     function enqueue(args, token) {
         var queue = pending.slice();
         if (args[0] === "list" || args[0] === "place" || args[0] === "weather" || args[0] === "github") {
-            for (var i=0;i<queue.length;i++) {
-                if (queue[i].args[0] === args[0] && queue[i].args[1] === args[1]) {
-                    queue[i] = {args:args,token:token || ""}; pending=queue; return true;
-                }
+            // Only collapse the adjacent tail. An intervening save, hide or
+            // permission change is an ordering barrier, including for reads.
+            var tail=queue[queue.length-1];
+            if (tail && !tail.retries && tail.args[0] === args[0] && tail.args[1] === args[1]) {
+                queue[queue.length-1] = {args:args,token:token || ""}; pending=queue; return true;
             }
         }
         if (queue.length >= 64) return false;

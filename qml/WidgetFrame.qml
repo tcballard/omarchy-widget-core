@@ -30,6 +30,19 @@ FocusScope {
     signal hideRequested()
     signal moved(real dx, real dy)
     signal finishedMoving()
+    signal canceledMoving()
+    property bool dragging: false
+    readonly property bool windowActive: Window.active
+    readonly property bool windowVisible: Window.window ? Window.window.visible : false
+    function cancelMove() {
+        if (!dragging) return;
+        dragging = false;
+        canceledMoving();
+    }
+    onEditingChanged: if (!editing) cancelMove()
+    onVisibleChanged: if (!visible) cancelMove()
+    onWindowActiveChanged: if (!windowActive) cancelMove()
+    onWindowVisibleChanged: if (!windowVisible) cancelMove()
     signal escapeRequested()
     // Mask the entire card, including widget content, to the same rounded edge.
     property Item roundedMask: Rectangle {
@@ -42,13 +55,16 @@ FocusScope {
     layer.effect: MultiEffect { maskEnabled:true; maskSource:root.roundedMask }
     activeFocusOnTab: true
     Keys.onPressed: function(event) {
-        if(event.key===Qt.Key_Escape){root.escapeRequested();event.accepted=true;return;}
+        if(event.key===Qt.Key_Escape){root.cancelMove();root.escapeRequested();event.accepted=true;return;}
         if(!root.editing)return;
-        if(event.key===Qt.Key_Left)root.moved(-root.moveStepX,0);
-        else if(event.key===Qt.Key_Right)root.moved(root.moveStepX,0);
-        else if(event.key===Qt.Key_Up)root.moved(0,-root.moveStepY);
-        else if(event.key===Qt.Key_Down)root.moved(0,root.moveStepY);
+        var dx=0,dy=0;
+        if(event.key===Qt.Key_Left)dx=-root.moveStepX;
+        else if(event.key===Qt.Key_Right)dx=root.moveStepX;
+        else if(event.key===Qt.Key_Up)dy=-root.moveStepY;
+        else if(event.key===Qt.Key_Down)dy=root.moveStepY;
         else return;
+        root.cancelMove();
+        root.moved(dx,dy);
         root.finishedMoving();event.accepted=true;
     }
     Rectangle {
@@ -73,13 +89,13 @@ FocusScope {
             visible:root.editing || root.appearance.showTitle === true
             Layout.fillWidth:true;Layout.preferredHeight:visible?Style.space(42):0
             MouseArea {
-                id: drag;anchors.fill:parent;enabled:root.editing
+                id: drag;objectName:"placement-drag";anchors.fill:parent;enabled:root.editing
                 cursorShape:pressed?Qt.ClosedHandCursor:Qt.OpenHandCursor
                 property point lastPoint:Qt.point(0,0)
-                onPressed:function(mouse){root.forceActiveFocus();lastPoint=mapToGlobal(mouse.x,mouse.y)}
-                onPositionChanged:function(mouse){if(!pressed)return;var point=mapToGlobal(mouse.x,mouse.y);root.moved(point.x-lastPoint.x,point.y-lastPoint.y);lastPoint=point}
-                onReleased:root.finishedMoving()
-                onCanceled:root.finishedMoving()
+                onPressed:function(mouse){root.forceActiveFocus();root.dragging=true;lastPoint=mapToGlobal(mouse.x,mouse.y)}
+                onPositionChanged:function(mouse){if(!pressed || !root.dragging)return;var point=mapToGlobal(mouse.x,mouse.y);root.moved(point.x-lastPoint.x,point.y-lastPoint.y);lastPoint=point}
+                onReleased:{if(!root.dragging)return;root.dragging=false;root.finishedMoving()}
+                onCanceled:root.cancelMove()
             }
             RowLayout {
                 anchors.fill:parent;anchors.leftMargin:Style.space(14);anchors.rightMargin:Style.space(root.configurable?42:7);spacing:Style.space(5)
